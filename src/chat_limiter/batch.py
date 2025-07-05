@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     pass
 
 from .limiter import ChatLimiter
+from .types import ChatCompletionRequest, ChatCompletionResponse
 
 logger = logging.getLogger(__name__)
 
@@ -511,3 +512,155 @@ def process_chat_batch_sync(
     """
     processor = ChatBatchProcessor(limiter, config)
     return processor.process_batch_sync(requests)
+
+
+# High-level chat completion batch processing
+class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCompletionResponse]):
+    """High-level batch processor for chat completion requests."""
+
+    async def process_item(self, item: BatchItem[ChatCompletionRequest]) -> ChatCompletionResponse:
+        """Process a single chat completion request using high-level interface."""
+        request = item.data
+
+        # Use the high-level chat completion method
+        response = await self.limiter.chat_completion(
+            model=request.model,
+            messages=request.messages,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+            top_p=request.top_p,
+            stop=request.stop,
+            stream=request.stream,
+            # Provider-specific parameters
+            frequency_penalty=request.frequency_penalty,
+            presence_penalty=request.presence_penalty,
+            top_k=request.top_k,
+        )
+
+        return response
+
+    def process_item_sync(self, item: BatchItem[ChatCompletionRequest]) -> ChatCompletionResponse:
+        """Process a single chat completion request synchronously using high-level interface."""
+        request = item.data
+
+        # Use the high-level chat completion method (sync)
+        response = self.limiter.chat_completion_sync(
+            model=request.model,
+            messages=request.messages,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+            top_p=request.top_p,
+            stop=request.stop,
+            stream=request.stream,
+            # Provider-specific parameters
+            frequency_penalty=request.frequency_penalty,
+            presence_penalty=request.presence_penalty,
+            top_k=request.top_k,
+        )
+
+        return response
+
+
+# Convenience functions for high-level chat completion batches
+async def process_chat_completion_batch(
+    limiter: ChatLimiter,
+    requests: list[ChatCompletionRequest],
+    config: BatchConfig | None = None,
+) -> list[BatchResult[ChatCompletionResponse]]:
+    """
+    Process a batch of high-level chat completion requests.
+
+    Args:
+        limiter: Configured ChatLimiter instance
+        requests: List of ChatCompletionRequest objects
+        config: Optional batch processing configuration
+
+    Returns:
+        List of batch results containing ChatCompletionResponse objects
+
+    Example:
+        from chat_limiter import ChatLimiter, Message, MessageRole, ChatCompletionRequest
+
+        requests = [
+            ChatCompletionRequest(
+                model="gpt-4o",
+                messages=[Message(role=MessageRole.USER, content="Hello!")],
+                max_tokens=50
+            ),
+            ChatCompletionRequest(
+                model="gpt-4o",
+                messages=[Message(role=MessageRole.USER, content="How are you?")],
+                max_tokens=50
+            )
+        ]
+
+        async with ChatLimiter.for_model("gpt-4o", api_key) as limiter:
+            results = await process_chat_completion_batch(limiter, requests)
+    """
+    processor = ChatCompletionBatchProcessor(limiter, config)
+    return await processor.process_batch(requests)
+
+
+def process_chat_completion_batch_sync(
+    limiter: ChatLimiter,
+    requests: list[ChatCompletionRequest],
+    config: BatchConfig | None = None,
+) -> list[BatchResult[ChatCompletionResponse]]:
+    """
+    Process a batch of high-level chat completion requests synchronously.
+
+    Args:
+        limiter: Configured ChatLimiter instance
+        requests: List of ChatCompletionRequest objects
+        config: Optional batch processing configuration
+
+    Returns:
+        List of batch results containing ChatCompletionResponse objects
+    """
+    processor = ChatCompletionBatchProcessor(limiter, config)
+    return processor.process_batch_sync(requests)
+
+
+# Helper function for creating chat completion requests from simple data
+def create_chat_completion_requests(
+    model: str,
+    prompts: list[str],
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    **kwargs: Any,
+) -> list[ChatCompletionRequest]:
+    """
+    Create a list of ChatCompletionRequest objects from simple prompts.
+
+    Args:
+        model: The model to use for all requests
+        prompts: List of user prompts
+        max_tokens: Maximum tokens per completion
+        temperature: Sampling temperature
+        **kwargs: Additional parameters for all requests
+
+    Returns:
+        List of ChatCompletionRequest objects
+
+    Example:
+        requests = create_chat_completion_requests(
+            model="gpt-4o",
+            prompts=["Hello!", "How are you?", "What is Python?"],
+            max_tokens=50,
+            temperature=0.7
+        )
+    """
+    from .types import Message, MessageRole
+
+    requests = []
+    for prompt in prompts:
+        request = ChatCompletionRequest(
+            model=model,
+            messages=[Message(role=MessageRole.USER, content=prompt)],
+            max_tokens=max_tokens,
+            temperature=temperature,
+            **kwargs
+        )
+        requests.append(request)
+
+    return requests

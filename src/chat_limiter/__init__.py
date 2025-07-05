@@ -12,11 +12,23 @@ from .batch import (
     BatchProcessor,
     BatchResult,
     ChatBatchProcessor,
+    ChatCompletionBatchProcessor,
+    create_chat_completion_requests,
     process_chat_batch,
     process_chat_batch_sync,
+    process_chat_completion_batch,
+    process_chat_completion_batch_sync,
 )
 from .limiter import ChatLimiter, LimiterState
 from .providers import Provider, ProviderConfig, RateLimitInfo
+from .types import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    Choice,
+    Message,
+    MessageRole,
+    Usage,
+)
 
 __all__ = [
     "ChatLimiter",
@@ -31,4 +43,14 @@ __all__ = [
     "ChatBatchProcessor",
     "process_chat_batch",
     "process_chat_batch_sync",
+    "ChatCompletionBatchProcessor",
+    "process_chat_completion_batch",
+    "process_chat_completion_batch_sync",
+    "create_chat_completion_requests",
+    "ChatCompletionRequest",
+    "ChatCompletionResponse",
+    "Message",
+    "MessageRole",
+    "Usage",
+    "Choice",
 ]

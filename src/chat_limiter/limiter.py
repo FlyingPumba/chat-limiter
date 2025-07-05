@@ -19,6 +19,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from .adapters import get_adapter
 from .providers import (
     Provider,
     ProviderConfig,
@@ -26,6 +27,13 @@ from .providers import (
     detect_provider_from_url,
     extract_rate_limit_info,
     get_provider_config,
+)
+from .types import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    Message,
+    MessageRole,
+    detect_provider_from_model,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,6 +75,14 @@ class ChatLimiter:
     - Provider-specific optimizations
 
     Example:
+        # High-level interface (recommended)
+        async with ChatLimiter.for_model("gpt-4o", api_key="sk-...") as limiter:
+            response = await limiter.chat_completion(
+                model="gpt-4o",
+                messages=[Message(role=MessageRole.USER, content="Hello!")]
+            )
+
+        # Low-level interface (for advanced users)
         async with ChatLimiter(provider=Provider.OPENAI, api_key="sk-...") as limiter:
             response = await limiter.request("POST", "/chat/completions", json=data)
     """
@@ -138,6 +154,43 @@ class ChatLimiter:
         # Context manager state
         self._async_context_active = False
         self._sync_context_active = False
+
+    @classmethod
+    def for_model(
+        cls,
+        model: str,
+        api_key: str,
+        **kwargs: Any,
+    ) -> "ChatLimiter":
+        """
+        Create a ChatLimiter instance automatically detecting the provider from the model name.
+
+        Args:
+            model: The model name (e.g., "gpt-4o", "claude-3-sonnet-20240229")
+            api_key: API key for the detected provider
+            **kwargs: Additional arguments passed to ChatLimiter
+
+        Returns:
+            Configured ChatLimiter instance
+
+        Raises:
+            ValueError: If provider cannot be determined from model name
+
+        Example:
+            async with ChatLimiter.for_model("gpt-4o", "sk-...") as limiter:
+                response = await limiter.simple_chat("gpt-4o", "Hello!")
+        """
+        provider_name = detect_provider_from_model(model)
+        if not provider_name:
+            raise ValueError(
+                f"Could not determine provider from model '{model}'. "
+                "Please specify the provider explicitly."
+            )
+
+        # Convert string to Provider enum
+        provider = Provider(provider_name)
+
+        return cls(provider=provider, api_key=api_key, **kwargs)
 
     def _init_http_clients(
         self,
@@ -527,3 +580,203 @@ class ChatLimiter:
         self.state.requests_used = 0
         self.state.tokens_used = 0
         self.state.consecutive_rate_limit_errors = 0
+
+    # High-level chat completion methods
+
+    async def chat_completion(
+        self,
+        model: str,
+        messages: list[Message],
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        stop: str | list[str] | None = None,
+        stream: bool = False,
+        **kwargs: Any,
+    ) -> ChatCompletionResponse:
+        """
+        Make a high-level chat completion request.
+
+        Args:
+            model: The model to use for completion
+            messages: List of messages in the conversation
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
+            top_p: Top-p sampling parameter
+            stop: Stop sequences
+            stream: Whether to stream the response
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            ChatCompletionResponse with the completion result
+
+        Raises:
+            ValueError: If provider cannot be determined from model
+            httpx.HTTPStatusError: For HTTP error responses
+            httpx.RequestError: For request errors
+        """
+        if not self._async_context_active:
+            raise RuntimeError("ChatLimiter must be used as an async context manager")
+
+        # Create request object
+        request = ChatCompletionRequest(
+            model=model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            stop=stop,
+            stream=stream,
+            **kwargs
+        )
+
+        # Get the appropriate adapter
+        adapter = get_adapter(self.provider)
+
+        # Format the request for the provider
+        formatted_request = adapter.format_request(request)
+
+        # Make the HTTP request
+        response = await self.request(
+            "POST",
+            adapter.get_endpoint(),
+            json=formatted_request
+        )
+
+        # Parse the response
+        response_data = response.json()
+        return adapter.parse_response(response_data, request)
+
+    def chat_completion_sync(
+        self,
+        model: str,
+        messages: list[Message],
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        stop: str | list[str] | None = None,
+        stream: bool = False,
+        **kwargs: Any,
+    ) -> ChatCompletionResponse:
+        """
+        Make a synchronous high-level chat completion request.
+
+        Args:
+            model: The model to use for completion
+            messages: List of messages in the conversation
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
+            top_p: Top-p sampling parameter
+            stop: Stop sequences
+            stream: Whether to stream the response
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            ChatCompletionResponse with the completion result
+
+        Raises:
+            ValueError: If provider cannot be determined from model
+            httpx.HTTPStatusError: For HTTP error responses
+            httpx.RequestError: For request errors
+        """
+        if not self._sync_context_active:
+            raise RuntimeError("ChatLimiter must be used as a sync context manager")
+
+        # Create request object
+        request = ChatCompletionRequest(
+            model=model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            stop=stop,
+            stream=stream,
+            **kwargs
+        )
+
+        # Get the appropriate adapter
+        adapter = get_adapter(self.provider)
+
+        # Format the request for the provider
+        formatted_request = adapter.format_request(request)
+
+        # Make the HTTP request
+        response = self.request_sync(
+            "POST",
+            adapter.get_endpoint(),
+            json=formatted_request
+        )
+
+        # Parse the response
+        response_data = response.json()
+        return adapter.parse_response(response_data, request)
+
+    # Convenience methods for different message types
+
+    async def simple_chat(
+        self,
+        model: str,
+        prompt: str,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """
+        Simple chat completion that returns just the text response.
+
+        Args:
+            model: The model to use
+            prompt: The user prompt
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
+            **kwargs: Additional parameters
+
+        Returns:
+            The text response from the model
+        """
+        messages = [Message(role=MessageRole.USER, content=prompt)]
+        response = await self.chat_completion(
+            model=model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            **kwargs
+        )
+
+        if response.choices:
+            return response.choices[0].message.content
+        return ""
+
+    def simple_chat_sync(
+        self,
+        model: str,
+        prompt: str,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """
+        Simple synchronous chat completion that returns just the text response.
+
+        Args:
+            model: The model to use
+            prompt: The user prompt
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
+            **kwargs: Additional parameters
+
+        Returns:
+            The text response from the model
+        """
+        messages = [Message(role=MessageRole.USER, content=prompt)]
+        response = self.chat_completion_sync(
+            model=model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            **kwargs
+        )
+
+        if response.choices:
+            return response.choices[0].message.content
+        return ""
