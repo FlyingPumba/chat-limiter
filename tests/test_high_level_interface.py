@@ -43,6 +43,59 @@ class TestChatLimiterForModel:
         assert limiter.provider == Provider.OPENAI
         assert not limiter.enable_adaptive_limits
 
+    def test_for_model_with_provider_override(self):
+        """Test ChatLimiter.for_model with provider override."""
+        # Test string provider override
+        limiter = ChatLimiter.for_model(
+            "custom-model",
+            "sk-test-key",
+            provider="openai"
+        )
+        assert limiter.provider == Provider.OPENAI
+        
+        # Test Provider enum override
+        limiter = ChatLimiter.for_model(
+            "custom-model",
+            "sk-test-key",
+            provider=Provider.ANTHROPIC
+        )
+        assert limiter.provider == Provider.ANTHROPIC
+
+    def test_for_model_with_env_api_key(self):
+        """Test ChatLimiter.for_model with environment variable API key."""
+        import os
+        
+        # Set environment variable
+        original_key = os.environ.get("OPENAI_API_KEY")
+        os.environ["OPENAI_API_KEY"] = "test-env-key"
+        
+        try:
+            limiter = ChatLimiter.for_model("gpt-4o")
+            assert limiter.provider == Provider.OPENAI
+            assert limiter.api_key == "test-env-key"
+        finally:
+            # Clean up
+            if original_key is not None:
+                os.environ["OPENAI_API_KEY"] = original_key
+            else:
+                os.environ.pop("OPENAI_API_KEY", None)
+
+    def test_for_model_missing_env_key(self):
+        """Test ChatLimiter.for_model with missing environment variable."""
+        import os
+        
+        # Ensure environment variable is not set
+        original_key = os.environ.get("ANTHROPIC_API_KEY")
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        
+        try:
+            with pytest.raises(ValueError, match="ANTHROPIC_API_KEY environment variable not set"):
+                ChatLimiter.for_model("claude-3-sonnet-20240229")
+        finally:
+            # Clean up
+            if original_key is not None:
+                os.environ["ANTHROPIC_API_KEY"] = original_key
+
 
 class TestChatCompletionAsync:
     @pytest.fixture

@@ -159,7 +159,8 @@ class ChatLimiter:
     def for_model(
         cls,
         model: str,
-        api_key: str,
+        api_key: str | None = None,
+        provider: str | Provider | None = None,
         **kwargs: Any,
     ) -> "ChatLimiter":
         """
@@ -167,30 +168,70 @@ class ChatLimiter:
 
         Args:
             model: The model name (e.g., "gpt-4o", "claude-3-sonnet-20240229")
-            api_key: API key for the detected provider
+            api_key: API key for the provider. If None, will be read from environment variables
+                    (OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY)
+            provider: Override provider detection. Can be "openai", "anthropic", "openrouter", 
+                     or Provider enum. If None, will be auto-detected from model name
             **kwargs: Additional arguments passed to ChatLimiter
 
         Returns:
             Configured ChatLimiter instance
 
         Raises:
-            ValueError: If provider cannot be determined from model name
+            ValueError: If provider cannot be determined from model name or API key not found
 
         Example:
-            async with ChatLimiter.for_model("gpt-4o", "sk-...") as limiter:
+            # Auto-detect provider and use environment variable for API key
+            async with ChatLimiter.for_model("gpt-4o") as limiter:
                 response = await limiter.simple_chat("gpt-4o", "Hello!")
+            
+            # Override provider detection
+            async with ChatLimiter.for_model("custom-model", provider="openai") as limiter:
+                response = await limiter.simple_chat("custom-model", "Hello!")
         """
-        provider_name = detect_provider_from_model(model)
-        if not provider_name:
-            raise ValueError(
-                f"Could not determine provider from model '{model}'. "
-                "Please specify the provider explicitly."
-            )
+        import os
+        
+        # Determine provider
+        if provider is not None:
+            # Use provided provider
+            if isinstance(provider, str):
+                provider_enum = Provider(provider)
+            else:
+                provider_enum = provider
+            provider_name = provider_enum.value
+        else:
+            # Auto-detect from model name
+            provider_name = detect_provider_from_model(model)
+            if not provider_name:
+                raise ValueError(
+                    f"Could not determine provider from model '{model}'. "
+                    "Please specify the provider explicitly using the 'provider' parameter."
+                )
+            provider_enum = Provider(provider_name)
+        
+        # Determine API key
+        if api_key is None:
+            # Try to get from environment variables
+            env_var_map = {
+                "openai": "OPENAI_API_KEY",
+                "anthropic": "ANTHROPIC_API_KEY", 
+                "openrouter": "OPENROUTER_API_KEY"
+            }
+            
+            env_var = env_var_map.get(provider_name)
+            if env_var:
+                api_key = os.getenv(env_var)
+                if not api_key:
+                    raise ValueError(
+                        f"API key not provided and {env_var} environment variable not set. "
+                        f"Please provide api_key parameter or set {env_var} environment variable."
+                    )
+            else:
+                raise ValueError(
+                    f"Unknown provider '{provider_name}'. Cannot determine environment variable for API key."
+                )
 
-        # Convert string to Provider enum
-        provider = Provider(provider_name)
-
-        return cls(provider=provider, api_key=api_key, **kwargs)
+        return cls(provider=provider_enum, api_key=api_key, **kwargs)
 
     def _init_http_clients(
         self,
