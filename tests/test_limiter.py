@@ -50,11 +50,26 @@ class TestChatLimiterInitialization:
         limiter = ChatLimiter(provider=Provider.OPENAI, api_key="sk-test")
 
         assert isinstance(limiter.state, LimiterState)
-        assert limiter.state.request_limit == 500  # OpenAI default
-        assert limiter.state.token_limit == 30000  # OpenAI default
+        assert limiter.state.request_limit is None  # No defaults - must be discovered
+        assert limiter.state.token_limit is None  # No defaults - must be discovered
         assert limiter.state.requests_used == 0
         assert limiter.state.tokens_used == 0
         assert limiter.state.consecutive_rate_limit_errors == 0
+        assert limiter._limits_discovered is False  # Limits not yet discovered
+    
+    def test_init_state_with_user_overrides(self):
+        """Test initial state setup with user-provided limits."""
+        limiter = ChatLimiter(
+            provider=Provider.OPENAI, 
+            api_key="sk-test",
+            request_limit=1000,
+            token_limit=50000
+        )
+
+        assert isinstance(limiter.state, LimiterState)
+        assert limiter.state.request_limit == 1000  # User override
+        assert limiter.state.token_limit == 50000  # User override
+        assert limiter._limits_discovered is True  # User provided limits
 
 
 class TestChatLimiterHeaders:
@@ -159,16 +174,17 @@ class TestChatLimiterRateLimitUpdates:
     """Tests for rate limit discovery and updates."""
 
     def test_update_rate_limits(self):
-        """Test updating rate limits from response."""
+        """Test updating rate limits from response (discovery)."""
         limiter = ChatLimiter(provider=Provider.OPENAI, api_key="sk-test")
 
         from chat_limiter.providers import RateLimitInfo
 
-        # Initial state
-        assert limiter.state.request_limit == 500
-        assert limiter.state.token_limit == 30000
+        # Initial state - no limits discovered yet
+        assert limiter.state.request_limit is None
+        assert limiter.state.token_limit is None
+        assert limiter._limits_discovered is False
 
-        # Update with new limits
+        # Discover limits from API response
         rate_limit_info = RateLimitInfo(
             requests_limit=1000,
             tokens_limit=60000,
@@ -178,13 +194,21 @@ class TestChatLimiterRateLimitUpdates:
 
         limiter._update_rate_limits(rate_limit_info)
 
+        # Limits should now be discovered and set
         assert limiter.state.request_limit == 1000
         assert limiter.state.token_limit == 60000
         assert limiter.state.last_rate_limit_info == rate_limit_info
+        assert limiter._limits_discovered is True
 
     def test_update_rate_limits_no_change(self):
-        """Test rate limit update with no changes."""
-        limiter = ChatLimiter(provider=Provider.OPENAI, api_key="sk-test")
+        """Test rate limit update with no changes after initial discovery."""
+        # Start with user-provided limits to have initialized limiters
+        limiter = ChatLimiter(
+            provider=Provider.OPENAI, 
+            api_key="sk-test",
+            request_limit=500,
+            token_limit=30000
+        )
 
         from chat_limiter.providers import RateLimitInfo
 
@@ -192,15 +216,15 @@ class TestChatLimiterRateLimitUpdates:
         original_request_limiter = limiter.request_limiter
         original_token_limiter = limiter.token_limiter
 
-        # Update with same limits
+        # Update with same limits (no change)
         rate_limit_info = RateLimitInfo(
-            requests_limit=500,  # Same as default
-            tokens_limit=30000,  # Same as default
+            requests_limit=500,  # Same as current
+            tokens_limit=30000,  # Same as current
         )
 
         limiter._update_rate_limits(rate_limit_info)
 
-        # Limiters should not be recreated
+        # Limiters should not be recreated since limits didn't change
         assert limiter.request_limiter is original_request_limiter
         assert limiter.token_limiter is original_token_limiter
 
@@ -346,12 +370,29 @@ class TestChatLimiterUtilities:
         limits = limiter.get_current_limits()
 
         assert limits["provider"] == "openai"
-        assert limits["request_limit"] == 500
-        assert limits["token_limit"] == 30000
+        assert limits["request_limit"] is None  # Not yet discovered
+        assert limits["token_limit"] is None  # Not yet discovered
         assert limits["requests_used"] == 0
         assert limits["tokens_used"] == 0
         assert "last_request_time" in limits
         assert "last_limit_update" in limits
+    
+    def test_get_current_limits_with_user_overrides(self):
+        """Test getting current limits with user-provided overrides."""
+        limiter = ChatLimiter(
+            provider=Provider.OPENAI, 
+            api_key="sk-test",
+            request_limit=1000,
+            token_limit=50000
+        )
+
+        limits = limiter.get_current_limits()
+
+        assert limits["provider"] == "openai"
+        assert limits["request_limit"] == 1000  # User override
+        assert limits["token_limit"] == 50000  # User override
+        assert limits["requests_used"] == 0
+        assert limits["tokens_used"] == 0
 
     def test_reset_usage_tracking(self):
         """Test resetting usage tracking."""
@@ -377,8 +418,8 @@ class TestLimiterState:
         """Test LimiterState default values."""
         state = LimiterState()
 
-        assert state.request_limit == 60
-        assert state.token_limit == 1000000
+        assert state.request_limit is None  # No defaults - must be discovered
+        assert state.token_limit is None  # No defaults - must be discovered
         assert state.requests_used == 0
         assert state.tokens_used == 0
         assert state.consecutive_rate_limit_errors == 0

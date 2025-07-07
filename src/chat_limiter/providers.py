@@ -54,17 +54,17 @@ class ProviderConfig(BaseModel):
 
     retry_after_header: str | None = None
 
-    # Default rate limits (fallback values)
-    default_request_limit: int = Field(default=60, ge=1)
-    default_token_limit: int = Field(default=1000000, ge=1)
+    # Rate limits (must be provided by user or discovered from API)
+    default_request_limit: int | None = None
+    default_token_limit: int | None = None
 
     # Rate limit discovery
     supports_dynamic_limits: bool = True
     auth_endpoint: str | None = None  # For checking limits via API
 
-    # Retry configuration
-    max_retries: int = Field(default=3, ge=0)
-    base_backoff: float = Field(default=1.0, ge=0.1)
+    # Retry configuration (no defaults - must be specified by user if needed)
+    max_retries: int | None = None
+    base_backoff: float | None = None
     max_backoff: float = Field(default=60.0, ge=1.0)
 
     # Safety buffers
@@ -84,8 +84,6 @@ PROVIDER_CONFIGS = {
         token_remaining_header="x-ratelimit-remaining-tokens",
         token_reset_header="x-ratelimit-reset-tokens",
         retry_after_header="retry-after",
-        default_request_limit=500,
-        default_token_limit=30000,
         supports_dynamic_limits=True,
     ),
     Provider.ANTHROPIC: ProviderConfig(
@@ -95,19 +93,13 @@ PROVIDER_CONFIGS = {
         token_limit_header="anthropic-ratelimit-tokens-limit",
         token_reset_header="anthropic-ratelimit-tokens-reset",
         retry_after_header="retry-after",
-        default_request_limit=60,
-        default_token_limit=1000000,
         supports_dynamic_limits=True,
     ),
     Provider.OPENROUTER: ProviderConfig(
         provider=Provider.OPENROUTER,
         base_url="https://openrouter.ai/api/v1",
         auth_endpoint="https://openrouter.ai/api/v1/auth/key",
-        default_request_limit=20,
-        default_token_limit=1000000,
         supports_dynamic_limits=True,
-        max_retries=5,
-        base_backoff=2.0,
     ),
 }
 

@@ -46,14 +46,19 @@ class TestProviderConfig:
 
     def test_provider_config_validation(self):
         """Test provider config validation."""
-        # Test minimum values
-        with pytest.raises(ValueError):
-            ProviderConfig(
-                provider=Provider.OPENAI,
-                base_url="https://api.openai.com/v1",
-                default_request_limit=0,  # Should be >= 1
-            )
-
+        # No validation is done on ProviderConfig creation anymore
+        # since defaults can be None and must be discovered from API
+        config = ProviderConfig(
+            provider=Provider.OPENAI,
+            base_url="https://api.openai.com/v1",
+            default_request_limit=None,  # No defaults - must be discovered
+        )
+        
+        # Config should be valid even with None defaults
+        assert config.provider == Provider.OPENAI
+        assert config.default_request_limit is None
+        
+        # Buffer ratio validation should still work
         with pytest.raises(ValueError):
             ProviderConfig(
                 provider=Provider.OPENAI,
@@ -81,8 +86,8 @@ class TestGetProviderConfig:
         assert config.request_limit_header == "x-ratelimit-limit-requests"
         assert config.request_remaining_header == "x-ratelimit-remaining-requests"
         assert config.token_limit_header == "x-ratelimit-limit-tokens"
-        assert config.default_request_limit == 500
-        assert config.default_token_limit == 30000
+        assert config.default_request_limit is None  # No defaults - must be discovered
+        assert config.default_token_limit is None  # No defaults - must be discovered
 
     def test_get_anthropic_config(self):
         """Test getting Anthropic config."""
@@ -94,8 +99,8 @@ class TestGetProviderConfig:
             config.request_remaining_header == "anthropic-ratelimit-requests-remaining"
         )
         assert config.token_limit_header == "anthropic-ratelimit-tokens-limit"
-        assert config.default_request_limit == 60
-        assert config.default_token_limit == 1000000
+        assert config.default_request_limit is None  # No defaults - must be discovered
+        assert config.default_token_limit is None  # No defaults - must be discovered
 
     def test_get_openrouter_config(self):
         """Test getting OpenRouter config."""
@@ -104,8 +109,8 @@ class TestGetProviderConfig:
         assert config.provider == Provider.OPENROUTER
         assert config.base_url == "https://openrouter.ai/api/v1"
         assert config.auth_endpoint == "https://openrouter.ai/api/v1/auth/key"
-        assert config.default_request_limit == 20
-        assert config.default_token_limit == 1000000
+        assert config.default_request_limit is None  # No defaults - must be discovered
+        assert config.default_token_limit is None  # No defaults - must be discovered
 
 
 class TestDetectProviderFromUrl:

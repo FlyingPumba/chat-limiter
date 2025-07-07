@@ -43,9 +43,9 @@ logger = logging.getLogger(__name__)
 class LimiterState:
     """Current state of the rate limiter."""
 
-    # Current limits
-    request_limit: int = 60
-    token_limit: int = 1000000
+    # Current limits (None if not yet discovered)
+    request_limit: int | None = None
+    token_limit: int | None = None
 
     # Usage tracking
     requests_used: int = 0
@@ -97,6 +97,10 @@ class ChatLimiter:
         sync_http_client: httpx.Client | None = None,
         enable_adaptive_limits: bool = True,
         enable_token_estimation: bool = True,
+        request_limit: int | None = None,
+        token_limit: int | None = None,
+        max_retries: int | None = None,
+        base_backoff: float | None = None,
         **kwargs: Any,
     ):
         """
@@ -111,6 +115,10 @@ class ChatLimiter:
             sync_http_client: Custom sync HTTP client
             enable_adaptive_limits: Enable adaptive rate limit adjustment
             enable_token_estimation: Enable token usage estimation
+            request_limit: Override request limit (if not provided, must be discovered from API)
+            token_limit: Override token limit (if not provided, must be discovered from API)
+            max_retries: Override max retries (defaults to 3 if not provided)
+            base_backoff: Override base backoff (defaults to 1.0 if not provided)
             **kwargs: Additional arguments passed to HTTP clients
         """
         # Determine provider and config
@@ -138,12 +146,33 @@ class ChatLimiter:
         self.api_key = api_key
         self.enable_adaptive_limits = enable_adaptive_limits
         self.enable_token_estimation = enable_token_estimation
+        
+        # Store user-provided overrides
+        self._user_request_limit = request_limit
+        self._user_token_limit = token_limit
+        self._user_max_retries = max_retries or 3  # Default to 3 if not provided
+        self._user_base_backoff = base_backoff or 1.0  # Default to 1.0 if not provided
 
-        # Initialize state
-        self.state = LimiterState(
-            request_limit=self.config.default_request_limit,
-            token_limit=self.config.default_token_limit,
+        # Determine initial limits (user override, config default, or None for discovery)
+        initial_request_limit = (
+            request_limit or 
+            self.config.default_request_limit or 
+            None
         )
+        initial_token_limit = (
+            token_limit or 
+            self.config.default_token_limit or 
+            None
+        )
+        
+        # Initialize state - will be None if no defaults and no discovery yet
+        self.state = LimiterState(
+            request_limit=initial_request_limit,
+            token_limit=initial_token_limit,
+        )
+        
+        # Flag to track if we need to discover limits
+        self._limits_discovered = initial_request_limit is not None and initial_token_limit is not None
 
         # Initialize HTTP clients
         self._init_http_clients(http_client, sync_http_client, **kwargs)
@@ -165,6 +194,10 @@ class ChatLimiter:
         api_key: str | None = None,
         provider: str | Provider | None = None,
         use_dynamic_discovery: bool = True,
+        request_limit: int | None = None,
+        token_limit: int | None = None,
+        max_retries: int | None = None,
+        base_backoff: float | None = None,
         **kwargs: Any,
     ) -> "ChatLimiter":
         """
@@ -260,7 +293,15 @@ class ChatLimiter:
                     f"Unknown provider '{provider_name}'. Cannot determine environment variable for API key."
                 )
 
-        return cls(provider=provider_enum, api_key=api_key, **kwargs)
+        return cls(
+            provider=provider_enum, 
+            api_key=api_key, 
+            request_limit=request_limit,
+            token_limit=token_limit,
+            max_retries=max_retries,
+            base_backoff=base_backoff,
+            **kwargs
+        )
 
     def _init_http_clients(
         self,
@@ -311,6 +352,16 @@ class ChatLimiter:
 
     def _init_rate_limiters(self) -> None:
         """Initialize PyrateLimiter instances."""
+        # Only initialize if we have limits
+        if self.state.request_limit is None or self.state.token_limit is None:
+            # Cannot initialize rate limiters without limits
+            # This will be called again after limits are discovered
+            self.request_limiter = None
+            self.token_limiter = None
+            self._effective_request_limit = None
+            self._effective_token_limit = None
+            return
+            
         # Calculate effective limits with buffer
         effective_request_limit = int(self.state.request_limit * self.config.request_buffer_ratio)
         effective_token_limit = int(self.state.token_limit * self.config.token_buffer_ratio)
@@ -425,28 +476,40 @@ class ChatLimiter:
     def _update_rate_limits(self, rate_limit_info: RateLimitInfo) -> None:
         """Update rate limits based on response headers."""
         updated = False
+        was_uninitialized = self.state.request_limit is None or self.state.token_limit is None
 
         # Update request limits
         if (
             rate_limit_info.requests_limit
             and rate_limit_info.requests_limit != self.state.request_limit
         ):
+            old_limit = self.state.request_limit
             self.state.request_limit = rate_limit_info.requests_limit
             updated = True
+            if was_uninitialized:
+                logger.info(f"Discovered request limit: {self.state.request_limit} req/min")
+            else:
+                logger.info(f"Updated request limit: {old_limit} -> {self.state.request_limit} req/min")
 
         # Update token limits
         if (
             rate_limit_info.tokens_limit
             and rate_limit_info.tokens_limit != self.state.token_limit
         ):
+            old_limit = self.state.token_limit
             self.state.token_limit = rate_limit_info.tokens_limit
             updated = True
+            if was_uninitialized:
+                logger.info(f"Discovered token limit: {self.state.token_limit} tokens/min")
+            else:
+                logger.info(f"Updated token limit: {old_limit} -> {self.state.token_limit} tokens/min")
 
         if updated:
-            logger.info(
-                f"Updated rate limits: {self.state.request_limit} req/min, {self.state.token_limit} tokens/min"
-            )
+            # Reinitialize rate limiters with new limits
             self._init_rate_limiters()
+            if was_uninitialized:
+                logger.info("Rate limiters initialized after discovery")
+                self._limits_discovered = True
 
         # Store the rate limit info
         self.state.last_rate_limit_info = rate_limit_info
@@ -475,31 +538,36 @@ class ChatLimiter:
         self, estimated_tokens: int = 0
     ) -> AsyncIterator[None]:
         """Acquire rate limits before making a request."""
-        # Wait for request rate limit
-        await asyncio.to_thread(self.request_limiter.try_acquire, "request")
+        # Check if rate limiters are initialized
+        if self.request_limiter is None or self.token_limiter is None:
+            # Limits not yet discovered - this request will help discover them
+            logger.info("Rate limits not yet discovered, proceeding without rate limiting for discovery")
+        else:
+            # Wait for request rate limit
+            await asyncio.to_thread(self.request_limiter.try_acquire, "request")
 
-        # Wait for token rate limit if we have token estimation
-        if estimated_tokens > 0:
-            # Check if request is too large for bucket capacity
-            if estimated_tokens > self._effective_token_limit:
-                # Log warning for large requests
-                logger.warning(
-                    f"Request estimated at {estimated_tokens} tokens exceeds bucket capacity "
-                    f"of {self._effective_token_limit} tokens. This may cause delays."
-                )
-                # For very large requests, we'll split the acquisition
-                # Acquire tokens in chunks to avoid bucket overflow
-                remaining_tokens = estimated_tokens
-                while remaining_tokens > 0:
-                    chunk_size = min(remaining_tokens, self._effective_token_limit // 2)
-                    await asyncio.to_thread(self.token_limiter.try_acquire, "token", chunk_size)
-                    remaining_tokens -= chunk_size
-                    if remaining_tokens > 0:
-                        # Brief pause to let bucket refill
-                        await asyncio.sleep(0.1)
-            else:
-                # Normal acquisition for smaller requests
-                await asyncio.to_thread(self.token_limiter.try_acquire, "token", estimated_tokens)
+            # Wait for token rate limit if we have token estimation and limiters are initialized
+            if estimated_tokens > 0 and self.token_limiter is not None and self._effective_token_limit is not None:
+                # Check if request is too large for bucket capacity
+                if estimated_tokens > self._effective_token_limit:
+                    # Log warning for large requests
+                    logger.warning(
+                        f"Request estimated at {estimated_tokens} tokens exceeds bucket capacity "
+                        f"of {self._effective_token_limit} tokens. This may cause delays."
+                    )
+                    # For very large requests, we'll split the acquisition
+                    # Acquire tokens in chunks to avoid bucket overflow
+                    remaining_tokens = estimated_tokens
+                    while remaining_tokens > 0:
+                        chunk_size = min(remaining_tokens, self._effective_token_limit // 2)
+                        await asyncio.to_thread(self.token_limiter.try_acquire, "token", chunk_size)
+                        remaining_tokens -= chunk_size
+                        if remaining_tokens > 0:
+                            # Brief pause to let bucket refill
+                            await asyncio.sleep(0.1)
+                else:
+                    # Normal acquisition for smaller requests
+                    await asyncio.to_thread(self.token_limiter.try_acquire, "token", estimated_tokens)
 
         try:
             yield
@@ -512,31 +580,36 @@ class ChatLimiter:
     @contextmanager
     def _acquire_rate_limits_sync(self, estimated_tokens: int = 0) -> Iterator[None]:
         """Sync version of rate limit acquisition."""
-        # Wait for request rate limit
-        self.request_limiter.try_acquire("request")
+        # Check if rate limiters are initialized
+        if self.request_limiter is None or self.token_limiter is None:
+            # Limits not yet discovered - this request will help discover them
+            logger.info("Rate limits not yet discovered, proceeding without rate limiting for discovery")
+        else:
+            # Wait for request rate limit
+            self.request_limiter.try_acquire("request")
 
-        # Wait for token rate limit if we have token estimation
-        if estimated_tokens > 0:
-            # Check if request is too large for bucket capacity
-            if estimated_tokens > self._effective_token_limit:
-                # Log warning for large requests
-                logger.warning(
-                    f"Request estimated at {estimated_tokens} tokens exceeds bucket capacity "
-                    f"of {self._effective_token_limit} tokens. This may cause delays."
-                )
-                # For very large requests, we'll split the acquisition
-                # Acquire tokens in chunks to avoid bucket overflow
-                remaining_tokens = estimated_tokens
-                while remaining_tokens > 0:
-                    chunk_size = min(remaining_tokens, self._effective_token_limit // 2)
-                    self.token_limiter.try_acquire("token", chunk_size)
-                    remaining_tokens -= chunk_size
-                    if remaining_tokens > 0:
-                        # Brief pause to let bucket refill
-                        time.sleep(0.1)
-            else:
-                # Normal acquisition for smaller requests
-                self.token_limiter.try_acquire("token", estimated_tokens)
+            # Wait for token rate limit if we have token estimation and limiters are initialized
+            if estimated_tokens > 0 and self.token_limiter is not None and self._effective_token_limit is not None:
+                # Check if request is too large for bucket capacity
+                if estimated_tokens > self._effective_token_limit:
+                    # Log warning for large requests
+                    logger.warning(
+                        f"Request estimated at {estimated_tokens} tokens exceeds bucket capacity "
+                        f"of {self._effective_token_limit} tokens. This may cause delays."
+                    )
+                    # For very large requests, we'll split the acquisition
+                    # Acquire tokens in chunks to avoid bucket overflow
+                    remaining_tokens = estimated_tokens
+                    while remaining_tokens > 0:
+                        chunk_size = min(remaining_tokens, self._effective_token_limit // 2)
+                        self.token_limiter.try_acquire("token", chunk_size)
+                        remaining_tokens -= chunk_size
+                        if remaining_tokens > 0:
+                            # Brief pause to let bucket refill
+                            time.sleep(0.1)
+                else:
+                    # Normal acquisition for smaller requests
+                    self.token_limiter.try_acquire("token", estimated_tokens)
 
         try:
             yield
@@ -910,11 +983,24 @@ class ChatLimiter:
         print(f"\n=== Rate Limit Configuration for {self.provider.value.title()} ===")
         print(f"Provider: {self.provider.value}")
         print(f"Base URL: {self.config.base_url}")
-        print(f"Request Limit: {self.state.request_limit}/minute (effective: {self._effective_request_limit}/minute)")
-        print(f"Token Limit: {self.state.token_limit}/minute (effective: {self._effective_token_limit}/minute)")
+        
+        # Handle None values for limits
+        if self.state.request_limit is not None:
+            effective_req = self._effective_request_limit or "not calculated"
+            print(f"Request Limit: {self.state.request_limit}/minute (effective: {effective_req}/minute)")
+        else:
+            print("Request Limit: Not yet discovered (will be fetched from API)")
+            
+        if self.state.token_limit is not None:
+            effective_tok = self._effective_token_limit or "not calculated"
+            print(f"Token Limit: {self.state.token_limit}/minute (effective: {effective_tok}/minute)")
+        else:
+            print("Token Limit: Not yet discovered (will be fetched from API)")
+            
         print(f"Request Buffer Ratio: {self.config.request_buffer_ratio}")
         print(f"Token Buffer Ratio: {self.config.token_buffer_ratio}")
         print(f"Adaptive Limits: {self.enable_adaptive_limits}")
         print(f"Token Estimation: {self.enable_token_estimation}")
         print(f"Dynamic Discovery: {self.config.supports_dynamic_limits}")
+        print(f"Limits Discovered: {self._limits_discovered}")
         print("=" * 50)
