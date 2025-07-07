@@ -161,6 +161,7 @@ class ChatLimiter:
         model: str,
         api_key: str | None = None,
         provider: str | Provider | None = None,
+        use_dynamic_discovery: bool = False,
         **kwargs: Any,
     ) -> "ChatLimiter":
         """
@@ -172,6 +173,8 @@ class ChatLimiter:
                     (OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY)
             provider: Override provider detection. Can be "openai", "anthropic", "openrouter",
                      or Provider enum. If None, will be auto-detected from model name
+            use_dynamic_discovery: Whether to query live APIs for model availability.
+                                 Requires appropriate API keys to be available.
             **kwargs: Additional arguments passed to ChatLimiter
 
         Returns:
@@ -184,9 +187,14 @@ class ChatLimiter:
             # Auto-detect provider and use environment variable for API key
             async with ChatLimiter.for_model("gpt-4o") as limiter:
                 response = await limiter.simple_chat("gpt-4o", "Hello!")
+
             # Override provider detection
             async with ChatLimiter.for_model("custom-model", provider="openai") as limiter:
                 response = await limiter.simple_chat("custom-model", "Hello!")
+
+            # Use dynamic discovery to check if model exists via live API
+            async with ChatLimiter.for_model("new-model", use_dynamic_discovery=True) as limiter:
+                response = await limiter.simple_chat("new-model", "Hello!")
         """
         import os
 
@@ -200,10 +208,26 @@ class ChatLimiter:
             provider_name = provider_enum.value
         else:
             # Auto-detect from model name
-            detected_provider = detect_provider_from_model(model)
+            # If dynamic discovery is requested, we need to collect API keys first
+            api_keys_for_discovery = {}
+            if use_dynamic_discovery:
+                # Collect available API keys from environment
+                env_var_map = {
+                    "openai": "OPENAI_API_KEY",
+                    "anthropic": "ANTHROPIC_API_KEY",
+                    "openrouter": "OPENROUTER_API_KEY"
+                }
+
+                for provider_key, env_var in env_var_map.items():
+                    key_value = os.getenv(env_var)
+                    if key_value:
+                        api_keys_for_discovery[provider_key] = key_value
+
+            detected_provider = detect_provider_from_model(model, use_dynamic_discovery, api_keys_for_discovery)
             if not detected_provider:
+                discovery_msg = " with dynamic API discovery" if use_dynamic_discovery else ""
                 raise ValueError(
-                    f"Could not determine provider from model '{model}'. "
+                    f"Could not determine provider from model '{model}'{discovery_msg}. "
                     "Please specify the provider explicitly using the 'provider' parameter."
                 )
             provider_name = detected_provider

@@ -116,14 +116,40 @@ OPENROUTER_MODELS = {
 ALL_MODELS = OPENAI_MODELS | ANTHROPIC_MODELS | OPENROUTER_MODELS
 
 
-def detect_provider_from_model(model: str) -> str | None:
-    """Detect provider from model name."""
+def detect_provider_from_model(model: str, use_dynamic_discovery: bool = False, api_keys: dict[str, str] | None = None) -> str | None:
+    """
+    Detect provider from model name.
+
+    Args:
+        model: The model name to check
+        use_dynamic_discovery: Whether to use live API queries for model discovery
+        api_keys: Dictionary of API keys for dynamic discovery
+
+    Returns:
+        Provider name or None if not found
+    """
+    # First try pattern-based detection for common cases
+    if "/" in model:  # OpenRouter format
+        return "openrouter"
+
+    # Check hardcoded lists for fast lookup
     if model in OPENAI_MODELS:
         return "openai"
     elif model in ANTHROPIC_MODELS:
         return "anthropic"
     elif model in OPENROUTER_MODELS:
         return "openrouter"
-    elif "/" in model:  # OpenRouter format
-        return "openrouter"
+
+    # If dynamic discovery is enabled and we have API keys, try that
+    if use_dynamic_discovery and api_keys:
+        try:
+            from .models import detect_provider_from_model_sync
+            return detect_provider_from_model_sync(model, api_keys)
+        except ImportError:
+            # Fall back to hardcoded detection if models module isn't available
+            pass
+        except Exception:
+            # If dynamic discovery fails, fall back to hardcoded detection
+            pass
+
     return None
