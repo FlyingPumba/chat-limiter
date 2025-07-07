@@ -337,7 +337,7 @@ class ChatLimiter:
         else:
             self.async_client = httpx.AsyncClient(
                 base_url=self.config.base_url,
-                timeout=httpx.Timeout(30.0),
+                timeout=httpx.Timeout(60.0),  # Increased timeout for reliability
                 **kwargs,
             )
 
@@ -346,7 +346,7 @@ class ChatLimiter:
         else:
             self.sync_client = httpx.Client(
                 base_url=self.config.base_url,
-                timeout=httpx.Timeout(30.0),
+                timeout=httpx.Timeout(60.0),  # Increased timeout for reliability
                 **kwargs,
             )
 
@@ -449,6 +449,8 @@ class ChatLimiter:
 
             else:
                 # For other providers, we'll discover limits on first request
+                if self._verbose_mode:
+                    print(f"Rate limit discovery will happen on first request for {self.provider.value}")
                 logger.info(
                     f"Rate limit discovery will happen on first request for {self.provider.value}"
                 )
@@ -487,9 +489,15 @@ class ChatLimiter:
             self.state.request_limit = rate_limit_info.requests_limit
             updated = True
             if was_uninitialized:
-                logger.info(f"Discovered request limit: {self.state.request_limit} req/min")
+                message = f"Discovered request limit: {self.state.request_limit} req/min"
+                if self._verbose_mode:
+                    print(message)
+                logger.info(message)
             else:
-                logger.info(f"Updated request limit: {old_limit} -> {self.state.request_limit} req/min")
+                message = f"Updated request limit: {old_limit} -> {self.state.request_limit} req/min"
+                if self._verbose_mode:
+                    print(message)
+                logger.info(message)
 
         # Update token limits
         if (
@@ -500,15 +508,26 @@ class ChatLimiter:
             self.state.token_limit = rate_limit_info.tokens_limit
             updated = True
             if was_uninitialized:
-                logger.info(f"Discovered token limit: {self.state.token_limit} tokens/min")
+                message = f"Discovered token limit: {self.state.token_limit} tokens/min"
+                if self._verbose_mode:
+                    print(message)
+                logger.info(message)
             else:
-                logger.info(f"Updated token limit: {old_limit} -> {self.state.token_limit} tokens/min")
+                message = f"Updated token limit: {old_limit} -> {self.state.token_limit} tokens/min"
+                if self._verbose_mode:
+                    print(message)
+                logger.info(message)
 
         if updated:
             # Reinitialize rate limiters with new limits
             self._init_rate_limiters()
             if was_uninitialized:
-                logger.info("Rate limiters initialized after discovery")
+                message = "Rate limiters initialized after discovery"
+                if self._verbose_mode:
+                    print(message)
+                    # Print updated rate limit info after discovery
+                    self._print_rate_limit_info()
+                logger.info(message)
                 self._limits_discovered = True
 
         # Store the rate limit info
@@ -619,12 +638,26 @@ class ChatLimiter:
             self.state.tokens_used += estimated_tokens
             self.state.last_request_time = time.time()
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=60),
-        retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.RequestError)),
-    )
+    def _get_retry_decorator(self):
+        """Get retry decorator with user-configured parameters."""
+        return retry(
+            stop=stop_after_attempt(self._user_max_retries),
+            wait=wait_exponential(multiplier=self._user_base_backoff, min=1, max=60),
+            retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.RequestError, httpx.ReadTimeout, httpx.ConnectTimeout)),
+        )
+
     async def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        json: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """Wrapper that applies retry decorator dynamically."""
+        return await self._get_retry_decorator()(self._request_impl)(method, url, json=json, **kwargs)
+
+    async def _request_impl(
         self,
         method: str,
         url: str,
@@ -687,12 +720,24 @@ class ChatLimiter:
 
             return response
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=60),
-        retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.RequestError)),
-    )
     def request_sync(
+        self,
+        method: str,
+        url: str,
+        *,
+        json: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """Wrapper that applies retry decorator dynamically."""
+        # For sync, we need to use the sync version of retry
+        retry_decorator = retry(
+            stop=stop_after_attempt(self._user_max_retries),
+            wait=wait_exponential(multiplier=self._user_base_backoff, min=1, max=60),
+            retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.RequestError, httpx.ReadTimeout, httpx.ConnectTimeout)),
+        )
+        return retry_decorator(self._request_sync_impl)(method, url, json=json, **kwargs)
+
+    def _request_sync_impl(
         self,
         method: str,
         url: str,
