@@ -117,6 +117,10 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
         self.config = config or BatchConfig()
         self._results: list[BatchResult[BatchResultT]] = []
         self._errors: list[Exception] = []
+        
+        # Enable verbose mode on limiter if config specifies it
+        if hasattr(self.limiter, 'set_verbose_mode'):
+            self.limiter.set_verbose_mode(self.config.verbose)
 
     @abstractmethod
     async def process_item(self, item: BatchItem[BatchItemT]) -> BatchResultT:

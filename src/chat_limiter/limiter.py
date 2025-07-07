@@ -154,6 +154,9 @@ class ChatLimiter:
         # Context manager state
         self._async_context_active = False
         self._sync_context_active = False
+        
+        # Verbose mode (can be set by batch processor)
+        self._verbose_mode = False
 
     @classmethod
     def for_model(
@@ -307,11 +310,15 @@ class ChatLimiter:
             )
 
     def _init_rate_limiters(self) -> None:
-        """Initialize PyrateLimiter instances."""        
+        """Initialize PyrateLimiter instances."""
+        # Calculate effective limits with buffer
+        effective_request_limit = int(self.state.request_limit * self.config.request_buffer_ratio)
+        effective_token_limit = int(self.state.token_limit * self.config.token_buffer_ratio)
+        
         # Request rate limiter
         self.request_limiter = Limiter(
             Rate(
-                int(self.state.request_limit * self.config.request_buffer_ratio),
+                effective_request_limit,
                 Duration.MINUTE,
             )
         )
@@ -319,10 +326,14 @@ class ChatLimiter:
         # Token rate limiter  
         self.token_limiter = Limiter(
             Rate(
-                int(self.state.token_limit * self.config.token_buffer_ratio),
+                effective_token_limit,
                 Duration.MINUTE,
             )
         )
+        
+        # Store effective limits for logging
+        self._effective_request_limit = effective_request_limit
+        self._effective_token_limit = effective_token_limit
 
     async def __aenter__(self) -> "ChatLimiter":
         """Async context manager entry."""
@@ -336,6 +347,10 @@ class ChatLimiter:
         # Discover rate limits if supported
         if self.config.supports_dynamic_limits:
             await self._discover_rate_limits()
+        
+        # Print rate limit information if verbose mode is enabled
+        if self._verbose_mode:
+            self._print_rate_limit_info()
 
         return self
 
@@ -356,6 +371,10 @@ class ChatLimiter:
         # Discover rate limits if supported
         if self.config.supports_dynamic_limits:
             self._discover_rate_limits_sync()
+        
+        # Print rate limit information if verbose mode is enabled
+        if self._verbose_mode:
+            self._print_rate_limit_info()
 
         return self
 
@@ -461,8 +480,26 @@ class ChatLimiter:
 
         # Wait for token rate limit if we have token estimation
         if estimated_tokens > 0:
-            # Use estimated_tokens as cost for token bucket
-            await asyncio.to_thread(self.token_limiter.try_acquire, "token", estimated_tokens)
+            # Check if request is too large for bucket capacity
+            if estimated_tokens > self._effective_token_limit:
+                # Log warning for large requests
+                logger.warning(
+                    f"Request estimated at {estimated_tokens} tokens exceeds bucket capacity "
+                    f"of {self._effective_token_limit} tokens. This may cause delays."
+                )
+                # For very large requests, we'll split the acquisition
+                # Acquire tokens in chunks to avoid bucket overflow
+                remaining_tokens = estimated_tokens
+                while remaining_tokens > 0:
+                    chunk_size = min(remaining_tokens, self._effective_token_limit // 2)
+                    await asyncio.to_thread(self.token_limiter.try_acquire, "token", chunk_size)
+                    remaining_tokens -= chunk_size
+                    if remaining_tokens > 0:
+                        # Brief pause to let bucket refill
+                        await asyncio.sleep(0.1)
+            else:
+                # Normal acquisition for smaller requests
+                await asyncio.to_thread(self.token_limiter.try_acquire, "token", estimated_tokens)
 
         try:
             yield
@@ -480,8 +517,26 @@ class ChatLimiter:
 
         # Wait for token rate limit if we have token estimation
         if estimated_tokens > 0:
-            # Use estimated_tokens as cost for token bucket
-            self.token_limiter.try_acquire("token", estimated_tokens)
+            # Check if request is too large for bucket capacity
+            if estimated_tokens > self._effective_token_limit:
+                # Log warning for large requests
+                logger.warning(
+                    f"Request estimated at {estimated_tokens} tokens exceeds bucket capacity "
+                    f"of {self._effective_token_limit} tokens. This may cause delays."
+                )
+                # For very large requests, we'll split the acquisition
+                # Acquire tokens in chunks to avoid bucket overflow
+                remaining_tokens = estimated_tokens
+                while remaining_tokens > 0:
+                    chunk_size = min(remaining_tokens, self._effective_token_limit // 2)
+                    self.token_limiter.try_acquire("token", chunk_size)
+                    remaining_tokens -= chunk_size
+                    if remaining_tokens > 0:
+                        # Brief pause to let bucket refill
+                        time.sleep(0.1)
+            else:
+                # Normal acquisition for smaller requests
+                self.token_limiter.try_acquire("token", estimated_tokens)
 
         try:
             yield
@@ -845,3 +900,21 @@ class ChatLimiter:
         if response.choices:
             return response.choices[0].message.content
         return ""
+    
+    def set_verbose_mode(self, verbose: bool) -> None:
+        """Set verbose mode for detailed logging."""
+        self._verbose_mode = verbose
+    
+    def _print_rate_limit_info(self) -> None:
+        """Print current rate limit configuration."""
+        print(f"\n=== Rate Limit Configuration for {self.provider.value.title()} ===")
+        print(f"Provider: {self.provider.value}")
+        print(f"Base URL: {self.config.base_url}")
+        print(f"Request Limit: {self.state.request_limit}/minute (effective: {self._effective_request_limit}/minute)")
+        print(f"Token Limit: {self.state.token_limit}/minute (effective: {self._effective_token_limit}/minute)")
+        print(f"Request Buffer Ratio: {self.config.request_buffer_ratio}")
+        print(f"Token Buffer Ratio: {self.config.token_buffer_ratio}")
+        print(f"Adaptive Limits: {self.enable_adaptive_limits}")
+        print(f"Token Estimation: {self.enable_token_estimation}")
+        print(f"Dynamic Discovery: {self.config.supports_dynamic_limits}")
+        print("=" * 50)
