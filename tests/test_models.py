@@ -161,8 +161,14 @@ class TestProviderDetection:
             "anthropic": "test-anthropic-key",
         }
         
-        with patch.object(ModelDiscovery, "get_openai_models") as mock_openai:
-            mock_openai.return_value = {"custom-gpt-model"}
+        # Create async mock that returns coroutines
+        mock_openai = AsyncMock(return_value={"custom-gpt-model"})
+        mock_anthropic = AsyncMock(return_value={"other-model"})
+        mock_openrouter = AsyncMock(return_value={"yet-another-model"})
+        
+        with patch.object(ModelDiscovery, "get_openai_models", mock_openai), \
+             patch.object(ModelDiscovery, "get_anthropic_models", mock_anthropic), \
+             patch.object(ModelDiscovery, "get_openrouter_models", mock_openrouter):
             
             result = await detect_provider_from_model_async("custom-gpt-model", api_keys)
             assert result == "openai"
@@ -173,8 +179,14 @@ class TestProviderDetection:
         """Test detection when model is not found."""
         api_keys = {"openai": "test-key"}
         
-        with patch.object(ModelDiscovery, "get_openai_models") as mock_openai:
-            mock_openai.return_value = {"different-model"}
+        # Create async mock that returns coroutines
+        mock_openai = AsyncMock(return_value={"different-model"})
+        mock_anthropic = AsyncMock(return_value={"other-model"})
+        mock_openrouter = AsyncMock(return_value={"yet-another-model"})
+        
+        with patch.object(ModelDiscovery, "get_openai_models", mock_openai), \
+             patch.object(ModelDiscovery, "get_anthropic_models", mock_anthropic), \
+             patch.object(ModelDiscovery, "get_openrouter_models", mock_openrouter):
             
             result = await detect_provider_from_model_async("unknown-model", api_keys)
             assert result is None
