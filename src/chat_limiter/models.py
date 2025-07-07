@@ -244,7 +244,7 @@ async def detect_provider_from_model_async(
     if "/" in model:  # OpenRouter format
         return "openrouter"
 
-    # Try to query each provider's API
+    # Create all tasks
     tasks = []
 
     if api_keys.get("openai"):
@@ -259,15 +259,25 @@ async def detect_provider_from_model_async(
         # OpenRouter doesn't require API key for model listing
         tasks.append(("openrouter", ModelDiscovery.get_openrouter_models()))
 
-    # Check all providers concurrently
-    for provider_name, model_task in tasks:
-        try:
-            models = await model_task
-            if model in models:
+    # Use asyncio.gather to run all tasks concurrently and properly handle them
+    try:
+        # Extract just the coroutines for gather
+        coroutines = [task[1] for task in tasks]
+        provider_names = [task[0] for task in tasks]
+        
+        # Wait for all results
+        results = await asyncio.gather(*coroutines, return_exceptions=True)
+        
+        # Check results in order
+        for provider_name, result in zip(provider_names, results):
+            if isinstance(result, Exception):
+                logger.debug(f"Failed to check {provider_name} for model {model}: {result}")
+                continue
+            if model in result:
                 return provider_name
-        except Exception as e:
-            logger.debug(f"Failed to check {provider_name} for model {model}: {e}")
-            continue
+                
+    except Exception as e:
+        logger.debug(f"Failed to run dynamic discovery for model {model}: {e}")
 
     return None
 
@@ -278,7 +288,24 @@ def detect_provider_from_model_sync(
 ) -> str | None:
     """Synchronous version of detect_provider_from_model_async."""
     try:
-        return asyncio.run(detect_provider_from_model_async(model, api_keys))
+        # Check if we're already in an async context
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context, but need to run in sync mode
+            # Create a new event loop in a thread
+            import concurrent.futures
+            import threading
+            
+            def run_in_thread():
+                return asyncio.run(detect_provider_from_model_async(model, api_keys))
+            
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_in_thread)
+                return future.result(timeout=30)  # 30 second timeout
+                
+        except RuntimeError:
+            # No running loop, safe to use asyncio.run
+            return asyncio.run(detect_provider_from_model_async(model, api_keys))
     except Exception as e:
         logger.debug(f"Failed to detect provider for model {model}: {e}")
         return None

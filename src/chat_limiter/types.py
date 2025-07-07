@@ -144,12 +144,21 @@ def detect_provider_from_model(model: str, use_dynamic_discovery: bool = False, 
     if use_dynamic_discovery and api_keys:
         try:
             from .models import detect_provider_from_model_sync
-            return detect_provider_from_model_sync(model, api_keys)
+            result = detect_provider_from_model_sync(model, api_keys)
+            if result:
+                return result
         except ImportError:
-            # Fall back to hardcoded detection if models module isn't available
+            # Fall back to pattern matching if models module isn't available
             pass
         except Exception:
-            # If dynamic discovery fails, fall back to hardcoded detection
+            # If dynamic discovery fails, fall back to pattern matching
             pass
+
+    # Final fallback: pattern matching for common model name patterns
+    model_lower = model.lower()
+    if model_lower.startswith("gpt") or "gpt" in model_lower:
+        return "openai"
+    elif model_lower.startswith("claude") or "claude" in model_lower:
+        return "anthropic"
 
     return None
