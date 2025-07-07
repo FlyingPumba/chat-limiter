@@ -521,6 +521,11 @@ class ChatLimiter:
         if updated:
             # Reinitialize rate limiters with new limits
             self._init_rate_limiters()
+            
+            # Update limits_discovered flag if both limits are now available
+            if self.state.request_limit is not None and self.state.token_limit is not None:
+                self._limits_discovered = True
+            
             if was_uninitialized:
                 message = "Rate limiters initialized after discovery"
                 if self._verbose_mode:
@@ -528,7 +533,6 @@ class ChatLimiter:
                     # Print updated rate limit info after discovery
                     self._print_rate_limit_info()
                 logger.info(message)
-                self._limits_discovered = True
 
         # Store the rate limit info
         self.state.last_rate_limit_info = rate_limit_info

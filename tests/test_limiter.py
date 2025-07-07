@@ -200,6 +200,43 @@ class TestChatLimiterRateLimitUpdates:
         assert limiter.state.last_rate_limit_info == rate_limit_info
         assert limiter._limits_discovered is True
 
+    def test_update_rate_limits_incremental_discovery(self):
+        """Test rate limit discovery when limits are discovered incrementally."""
+        limiter = ChatLimiter(provider=Provider.OPENAI, api_key="sk-test")
+        
+        from chat_limiter.providers import RateLimitInfo
+
+        # Initial state - no limits discovered yet
+        assert limiter.state.request_limit is None
+        assert limiter.state.token_limit is None
+        assert limiter._limits_discovered is False
+
+        # First API response: Only request limit discovered
+        rate_limit_info_1 = RateLimitInfo(
+            requests_limit=1000,
+            requests_remaining=999,
+        )
+        limiter._update_rate_limits(rate_limit_info_1)
+        
+        # Request limit should be set, but limits_discovered should still be False
+        # because token limit is not yet discovered
+        assert limiter.state.request_limit == 1000
+        assert limiter.state.token_limit is None
+        assert limiter._limits_discovered is False
+
+        # Second API response: Token limit discovered
+        rate_limit_info_2 = RateLimitInfo(
+            requests_limit=1000,  # Same as before
+            tokens_limit=60000,
+            tokens_remaining=59000,
+        )
+        limiter._update_rate_limits(rate_limit_info_2)
+        
+        # Now both limits should be set and limits_discovered should be True
+        assert limiter.state.request_limit == 1000
+        assert limiter.state.token_limit == 60000
+        assert limiter._limits_discovered is True
+
     def test_update_rate_limits_no_change(self):
         """Test rate limit update with no changes after initial discovery."""
         # Start with user-provided limits to have initialized limiters
