@@ -46,7 +46,7 @@ class OpenAIAdapter(ProviderAdapter):
     def format_request(self, request: ChatCompletionRequest) -> dict[str, Any]:
         """Convert to OpenAI format."""
         # Convert messages
-        messages = []
+        messages: list[dict[str, Any]] = []
         for msg in request.messages:
             messages.append({
                 "role": msg.role.value,
@@ -54,7 +54,7 @@ class OpenAIAdapter(ProviderAdapter):
             })
 
         # Build request
-        openai_request = {
+        openai_request: dict[str, Any] = {
             "model": request.model,
             "messages": messages,
         }
@@ -127,8 +127,8 @@ class AnthropicAdapter(ProviderAdapter):
     def format_request(self, request: ChatCompletionRequest) -> dict[str, Any]:
         """Convert to Anthropic format."""
         # Anthropic has a different message format
-        messages = []
-        system_message = None
+        messages: list[dict[str, Any]] = []
+        system_message: str | None = None
 
         for msg in request.messages:
             if msg.role == MessageRole.SYSTEM:
@@ -141,7 +141,7 @@ class AnthropicAdapter(ProviderAdapter):
                 })
 
         # Build request
-        anthropic_request = {
+        anthropic_request: dict[str, Any] = {
             "model": request.model,
             "messages": messages,
             "max_tokens": request.max_tokens or 1024,  # Required for Anthropic
@@ -223,7 +223,7 @@ class OpenRouterAdapter(ProviderAdapter):
     def format_request(self, request: ChatCompletionRequest) -> dict[str, Any]:
         """Convert to OpenRouter format (similar to OpenAI)."""
         # OpenRouter uses OpenAI-compatible format
-        messages = []
+        messages: list[dict[str, Any]] = []
         for msg in request.messages:
             messages.append({
                 "role": msg.role.value,
@@ -231,7 +231,7 @@ class OpenRouterAdapter(ProviderAdapter):
             })
 
         # Build request
-        openrouter_request = {
+        openrouter_request: dict[str, Any] = {
             "model": request.model,
             "messages": messages,
         }

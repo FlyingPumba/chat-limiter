@@ -230,6 +230,7 @@ class ChatLimiter:
                     f"Could not determine provider from model '{model}'{discovery_msg}. "
                     "Please specify the provider explicitly using the 'provider' parameter."
                 )
+            assert detected_provider is not None  # Help MyPy understand type narrowing
             provider_name = detected_provider
             provider_enum = Provider(provider_name)
 
@@ -242,13 +243,13 @@ class ChatLimiter:
                 "openrouter": "OPENROUTER_API_KEY"
             }
 
-            env_var = env_var_map.get(provider_name)
-            if env_var:
-                api_key = os.getenv(env_var)
+            env_var_name: str | None = env_var_map.get(provider_name)
+            if env_var_name:
+                api_key = os.getenv(env_var_name)
                 if not api_key:
                     raise ValueError(
-                        f"API key not provided and {env_var} environment variable not set. "
-                        f"Please provide api_key parameter or set {env_var} environment variable."
+                        f"API key not provided and {env_var_name} environment variable not set. "
+                        f"Please provide api_key parameter or set {env_var_name} environment variable."
                     )
             else:
                 raise ValueError(
