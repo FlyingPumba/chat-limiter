@@ -69,17 +69,12 @@ class TestLiveModelDiscovery:
         except Exception as e:
             print(f"Could not fetch raw API response: {e}")
 
-    def test_fallback_with_unknown_model(self):
-        """Test that unknown models fall back properly when dynamic discovery fails."""
-        # This should work even if the model doesn't exist - should fall back to pattern matching
-        try:
-            limiter = ChatLimiter.for_model("gpt-nonexistent", api_key="fake-key")
-            # If it doesn't raise an error, it means it detected "gpt" pattern and assumed openai
-            assert limiter.provider.value == "openai"
-        except ValueError as e:
-            # This is the current bug - it should fall back to pattern matching instead
-            assert "Could not determine provider" in str(e)
-            pytest.fail("Should have fallen back to pattern matching for 'gpt-*' models")
+    def test_unknown_model_fails_properly(self):
+        """Test that unknown models fail explicitly when dynamic discovery fails."""
+        # This should fail explicitly - no hidden fallbacks
+        with pytest.raises(ValueError) as excinfo:
+            ChatLimiter.for_model("gpt-nonexistent", api_key="fake-key")
+        assert "Could not determine provider" in str(excinfo.value)
 
     def test_provider_override_works(self):
         """Test that provider override bypasses dynamic discovery issues."""

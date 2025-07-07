@@ -62,14 +62,7 @@ class ModelDiscovery:
 
         except Exception as e:
             logger.warning(f"Failed to fetch OpenAI models: {e}")
-            # Return fallback models if API fails
-            return {
-                "gpt-4o",
-                "gpt-4o-mini",
-                "gpt-4-turbo",
-                "gpt-4",
-                "gpt-3.5-turbo",
-            }
+            raise
 
     @staticmethod
     async def get_anthropic_models(api_key: str) -> set[str]:
@@ -114,14 +107,7 @@ class ModelDiscovery:
 
         except Exception as e:
             logger.warning(f"Failed to fetch Anthropic models: {e}")
-            # Return fallback models if API fails
-            return {
-                "claude-3-5-sonnet-20241022",
-                "claude-3-5-haiku-20241022",
-                "claude-3-opus-20240229",
-                "claude-3-sonnet-20240229",
-                "claude-3-haiku-20240307",
-            }
+            raise
 
     @staticmethod
     async def get_openrouter_models(api_key: str | None = None) -> set[str]:
@@ -166,61 +152,22 @@ class ModelDiscovery:
 
         except Exception as e:
             logger.warning(f"Failed to fetch OpenRouter models: {e}")
-            # Return fallback models if API fails
-            return {
-                "openai/gpt-4o",
-                "openai/gpt-4o-mini",
-                "anthropic/claude-3-5-sonnet",
-                "anthropic/claude-3-opus",
-                "meta-llama/llama-3.1-405b-instruct",
-                "google/gemini-pro",
-            }
+            raise
 
     @staticmethod
     def get_openai_models_sync(api_key: str) -> set[str]:
         """Synchronous version of get_openai_models."""
-        try:
-            return asyncio.run(ModelDiscovery.get_openai_models(api_key))
-        except Exception as e:
-            logger.warning(f"Failed to fetch OpenAI models synchronously: {e}")
-            return {
-                "gpt-4o",
-                "gpt-4o-mini",
-                "gpt-4-turbo",
-                "gpt-4",
-                "gpt-3.5-turbo",
-            }
+        return asyncio.run(ModelDiscovery.get_openai_models(api_key))
 
     @staticmethod
     def get_anthropic_models_sync(api_key: str) -> set[str]:
         """Synchronous version of get_anthropic_models."""
-        try:
-            return asyncio.run(ModelDiscovery.get_anthropic_models(api_key))
-        except Exception as e:
-            logger.warning(f"Failed to fetch Anthropic models synchronously: {e}")
-            return {
-                "claude-3-5-sonnet-20241022",
-                "claude-3-5-haiku-20241022",
-                "claude-3-opus-20240229",
-                "claude-3-sonnet-20240229",
-                "claude-3-haiku-20240307",
-            }
+        return asyncio.run(ModelDiscovery.get_anthropic_models(api_key))
 
     @staticmethod
     def get_openrouter_models_sync(api_key: str | None = None) -> set[str]:
         """Synchronous version of get_openrouter_models."""
-        try:
-            return asyncio.run(ModelDiscovery.get_openrouter_models(api_key))
-        except Exception as e:
-            logger.warning(f"Failed to fetch OpenRouter models synchronously: {e}")
-            return {
-                "openai/gpt-4o",
-                "openai/gpt-4o-mini",
-                "anthropic/claude-3-5-sonnet",
-                "anthropic/claude-3-opus",
-                "meta-llama/llama-3.1-405b-instruct",
-                "google/gemini-pro",
-            }
+        return asyncio.run(ModelDiscovery.get_openrouter_models(api_key))
 
 
 async def detect_provider_from_model_async(
@@ -287,28 +234,23 @@ def detect_provider_from_model_sync(
     api_keys: dict[str, str] | None = None
 ) -> str | None:
     """Synchronous version of detect_provider_from_model_async."""
+    # Check if we're already in an async context
     try:
-        # Check if we're already in an async context
-        try:
-            loop = asyncio.get_running_loop()
-            # We're in an async context, but need to run in sync mode
-            # Create a new event loop in a thread
-            import concurrent.futures
-            import threading
-            
-            def run_in_thread():
-                return asyncio.run(detect_provider_from_model_async(model, api_keys))
-            
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(run_in_thread)
-                return future.result(timeout=30)  # 30 second timeout
-                
-        except RuntimeError:
-            # No running loop, safe to use asyncio.run
+        loop = asyncio.get_running_loop()
+        # We're in an async context, but need to run in sync mode
+        # Create a new event loop in a thread
+        import concurrent.futures
+        
+        def run_in_thread():
             return asyncio.run(detect_provider_from_model_async(model, api_keys))
-    except Exception as e:
-        logger.debug(f"Failed to detect provider for model {model}: {e}")
-        return None
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_in_thread)
+            return future.result(timeout=30)  # 30 second timeout
+            
+    except RuntimeError:
+        # No running loop, safe to use asyncio.run
+        return asyncio.run(detect_provider_from_model_async(model, api_keys))
 
 
 def clear_model_cache() -> None:
@@ -318,29 +260,4 @@ def clear_model_cache() -> None:
     logger.info("Model cache cleared")
 
 
-# Fallback function that uses hardcoded lists (for backward compatibility)
-def detect_provider_from_model_fallback(model: str) -> str | None:
-    """
-    Fallback provider detection using hardcoded model lists.
-    Used when API queries are not available or fail.
-    """
-    # Hardcoded fallback models
-    openai_models = {
-        "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo", "gpt-3.5-turbo-16k"
-    }
-
-    anthropic_models = {
-        "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022",
-        "claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"
-    }
-
-    # Check hardcoded lists
-    if model in openai_models:
-        return "openai"
-    elif model in anthropic_models:
-        return "anthropic"
-    elif "/" in model:  # OpenRouter format
-        return "openrouter"
-
-    return None
 

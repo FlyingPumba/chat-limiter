@@ -11,7 +11,6 @@ from chat_limiter.models import (
     detect_provider_from_model_async,
     detect_provider_from_model_sync,
     clear_model_cache,
-    detect_provider_from_model_fallback,
 )
 
 
@@ -34,17 +33,12 @@ class TestModelDiscovery:
             assert "gpt-3.5-turbo" in models
 
     @pytest.mark.asyncio
-    async def test_get_openai_models_error_fallback(self):
-        """Test OpenAI model retrieval fallback on error."""
+    async def test_get_openai_models_error_raises(self):
+        """Test OpenAI model retrieval raises exception on error."""
         # Test the actual implementation by calling it directly
-        # The fallback should return a set of expected models
-        models = await ModelDiscovery.get_openai_models("invalid-key")
-
-        # Should return fallback models (the actual fallback models from the implementation)
-        assert isinstance(models, set)
-        assert len(models) > 0
-        # These are the actual fallback models from the implementation
-        assert "gpt-4o" in models or "gpt-3.5-turbo" in models
+        # Should raise an exception instead of returning fallback models
+        with pytest.raises(Exception):  # Could be HTTPStatusError or other exception
+            await ModelDiscovery.get_openai_models("invalid-key")
 
     @pytest.mark.asyncio
     async def test_get_anthropic_models_success(self):
@@ -116,23 +110,22 @@ class TestModelDiscovery:
             result = ModelDiscovery.get_openrouter_models_sync("test-key")
             assert result == {"gpt-4o"}
 
-    def test_sync_methods_error_fallback(self):
-        """Test sync methods fallback on error."""
+    def test_sync_methods_error_raises(self):
+        """Test sync methods raise exceptions on error."""
         with patch("asyncio.run") as mock_run:
             mock_run.side_effect = Exception("Async error")
             
-            # Test OpenAI sync fallback
-            result = ModelDiscovery.get_openai_models_sync("test-key")
-            assert "gpt-4o" in result
-            assert "gpt-4o-mini" in result
+            # Test OpenAI sync raises exception
+            with pytest.raises(Exception):
+                ModelDiscovery.get_openai_models_sync("test-key")
             
-            # Test Anthropic sync fallback
-            result = ModelDiscovery.get_anthropic_models_sync("test-key")
-            assert "claude-3-5-sonnet-20241022" in result
+            # Test Anthropic sync raises exception
+            with pytest.raises(Exception):
+                ModelDiscovery.get_anthropic_models_sync("test-key")
             
-            # Test OpenRouter sync fallback
-            result = ModelDiscovery.get_openrouter_models_sync("test-key")
-            assert "openai/gpt-4o" in result
+            # Test OpenRouter sync raises exception
+            with pytest.raises(Exception):
+                ModelDiscovery.get_openrouter_models_sync("test-key")
 
     def test_model_cache(self):
         """Test model caching functionality."""
@@ -195,29 +188,13 @@ class TestProviderDetection:
             assert result == "openai"
 
     def test_detect_provider_from_model_sync_error(self):
-        """Test sync detection fallback on error."""
+        """Test sync detection raises exception on error."""
         with patch("asyncio.run") as mock_run:
             mock_run.side_effect = Exception("Error")
             
-            result = detect_provider_from_model_sync("unknown-model")
-            assert result is None
+            with pytest.raises(Exception):
+                detect_provider_from_model_sync("unknown-model")
 
-    def test_detect_provider_from_model_fallback(self):
-        """Test fallback provider detection with hardcoded lists."""
-        # Test OpenAI models
-        assert detect_provider_from_model_fallback("gpt-4o") == "openai"
-        assert detect_provider_from_model_fallback("gpt-3.5-turbo") == "openai"
-        
-        # Test Anthropic models
-        assert detect_provider_from_model_fallback("claude-3-5-sonnet-20241022") == "anthropic"
-        assert detect_provider_from_model_fallback("claude-3-haiku-20240307") == "anthropic"
-        
-        # Test OpenRouter pattern
-        assert detect_provider_from_model_fallback("openai/gpt-4o") == "openrouter"
-        assert detect_provider_from_model_fallback("anthropic/claude-3-sonnet") == "openrouter"
-        
-        # Test unknown model
-        assert detect_provider_from_model_fallback("unknown-model") is None
 
 
 class TestCacheManagement:
@@ -242,13 +219,21 @@ class TestCacheManagement:
         # Test the cache clearing functionality
         clear_model_cache()
         
-        # We can't easily test the caching behavior without complex mocking,
-        # so let's just test that the cache clearing works and calls are idempotent
-        models1 = await ModelDiscovery.get_openai_models("test-cache-key")
-        models2 = await ModelDiscovery.get_openai_models("test-cache-key")
+        # Test cache behavior with mocked API calls
+        from chat_limiter.models import _model_cache
+        from datetime import datetime
         
-        # Should return consistent results
-        assert isinstance(models1, set)
-        assert isinstance(models2, set)
-        assert len(models1) > 0
-        assert len(models2) > 0
+        # Manually add an item to cache
+        test_models = {"gpt-4o", "gpt-3.5-turbo"}
+        _model_cache["test_key"] = {
+            "models": test_models,
+            "timestamp": datetime.now()
+        }
+        
+        # Verify cache has the item
+        assert len(_model_cache) == 1
+        assert _model_cache["test_key"]["models"] == test_models
+        
+        # Clear cache and verify it's empty
+        clear_model_cache()
+        assert len(_model_cache) == 0
