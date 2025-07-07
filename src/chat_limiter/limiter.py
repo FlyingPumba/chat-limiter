@@ -101,6 +101,7 @@ class ChatLimiter:
         token_limit: int | None = None,
         max_retries: int | None = None,
         base_backoff: float | None = None,
+        timeout: float | None = None,
         **kwargs: Any,
     ):
         """
@@ -119,6 +120,7 @@ class ChatLimiter:
             token_limit: Override token limit (if not provided, must be discovered from API)
             max_retries: Override max retries (defaults to 3 if not provided)
             base_backoff: Override base backoff (defaults to 1.0 if not provided)
+            timeout: HTTP request timeout in seconds (defaults to 120.0 for better reliability)
             **kwargs: Additional arguments passed to HTTP clients
         """
         # Determine provider and config
@@ -152,6 +154,7 @@ class ChatLimiter:
         self._user_token_limit = token_limit
         self._user_max_retries = max_retries or 3  # Default to 3 if not provided
         self._user_base_backoff = base_backoff or 1.0  # Default to 1.0 if not provided
+        self._user_timeout = timeout or 120.0  # Default to 120 seconds for better reliability
 
         # Determine initial limits (user override, config default, or None for discovery)
         initial_request_limit = (
@@ -198,6 +201,7 @@ class ChatLimiter:
         token_limit: int | None = None,
         max_retries: int | None = None,
         base_backoff: float | None = None,
+        timeout: float | None = None,
         **kwargs: Any,
     ) -> "ChatLimiter":
         """
@@ -300,6 +304,7 @@ class ChatLimiter:
             token_limit=token_limit,
             max_retries=max_retries,
             base_backoff=base_backoff,
+            timeout=timeout,
             **kwargs
         )
 
@@ -337,7 +342,7 @@ class ChatLimiter:
         else:
             self.async_client = httpx.AsyncClient(
                 base_url=self.config.base_url,
-                timeout=httpx.Timeout(60.0),  # Increased timeout for reliability
+                timeout=httpx.Timeout(self._user_timeout),  # Configurable timeout
                 **kwargs,
             )
 
@@ -346,7 +351,7 @@ class ChatLimiter:
         else:
             self.sync_client = httpx.Client(
                 base_url=self.config.base_url,
-                timeout=httpx.Timeout(60.0),  # Increased timeout for reliability
+                timeout=httpx.Timeout(self._user_timeout),  # Configurable timeout
                 **kwargs,
             )
 
@@ -659,7 +664,35 @@ class ChatLimiter:
         **kwargs: Any,
     ) -> httpx.Response:
         """Wrapper that applies retry decorator dynamically."""
-        return await self._get_retry_decorator()(self._request_impl)(method, url, json=json, **kwargs)
+        try:
+            return await self._get_retry_decorator()(self._request_impl)(method, url, json=json, **kwargs)
+        except Exception as e:
+            # Check if this is a retry error wrapping a timeout
+            if hasattr(e, 'last_attempt') and e.last_attempt and e.last_attempt.exception():
+                original_exception = e.last_attempt.exception()
+                if isinstance(original_exception, (httpx.ReadTimeout, httpx.ConnectTimeout)):
+                    # Enhance timeout error with helpful information
+                    timeout_info = (
+                        f"\n💡 Timeout Error Help:\n"
+                        f"   Current timeout: {self._user_timeout}s\n"
+                        f"   To increase timeout, use: ChatLimiter.for_model('{self.provider.value}', timeout={self._user_timeout + 60})\n"
+                        f"   Or reduce batch concurrency if processing multiple requests\n"
+                        f"   Retries attempted: {self._user_max_retries}\n"
+                    )
+                    raise type(original_exception)(str(original_exception) + timeout_info) from e
+            
+            # For direct timeout errors (shouldn't happen due to retry decorator but just in case)
+            if isinstance(e, (httpx.ReadTimeout, httpx.ConnectTimeout)):
+                timeout_info = (
+                    f"\n💡 Timeout Error Help:\n"
+                    f"   Current timeout: {self._user_timeout}s\n"
+                    f"   To increase timeout, use: ChatLimiter.for_model('{self.provider.value}', timeout={self._user_timeout + 60})\n"
+                    f"   Or reduce batch concurrency if processing multiple requests\n"
+                )
+                raise type(e)(str(e) + timeout_info) from e
+            
+            # Re-raise any other exceptions unchanged
+            raise
 
     async def _request_impl(
         self,
@@ -739,7 +772,17 @@ class ChatLimiter:
             wait=wait_exponential(multiplier=self._user_base_backoff, min=1, max=60),
             retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.RequestError, httpx.ReadTimeout, httpx.ConnectTimeout)),
         )
-        return retry_decorator(self._request_sync_impl)(method, url, json=json, **kwargs)
+        try:
+            return retry_decorator(self._request_sync_impl)(method, url, json=json, **kwargs)
+        except (httpx.ReadTimeout, httpx.ConnectTimeout) as e:
+            # Enhance timeout error with helpful information
+            timeout_info = (
+                f"\n💡 Timeout Error Help:\n"
+                f"   Current timeout: {self._user_timeout}s\n"
+                f"   To increase timeout, use: ChatLimiter.for_model('{self.provider.value}', timeout={self._user_timeout + 60})\n"
+                f"   Or reduce batch concurrency if processing multiple requests\n"
+            )
+            raise type(e)(str(e) + timeout_info) from e
 
     def _request_sync_impl(
         self,

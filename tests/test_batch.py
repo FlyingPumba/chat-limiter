@@ -646,3 +646,42 @@ class TestConvenienceFunctions:
         assert "Exception in batch item" not in captured.out
         assert "Traceback" not in captured.err
         assert "Silent test exception" not in captured.err
+
+    @pytest.mark.asyncio
+    async def test_timeout_error_handling(self, mock_async_client, capsys):
+        """Test special handling for timeout errors in batch processing."""
+        import httpx
+        
+        # Create a mock that raises a ReadTimeout exception
+        mock_async_client.request.side_effect = httpx.ReadTimeout("Test timeout")
+        
+        limiter = ChatLimiter(
+            provider=Provider.OPENAI, api_key="sk-test", http_client=mock_async_client
+        )
+
+        requests = [{"messages": [{"role": "user", "content": "Hello"}]}]
+        
+        # Test with verbose mode enabled to see timeout-specific messaging
+        config = BatchConfig(
+            verbose=True,
+            show_progress=False,  # Disable progress bar for cleaner output
+            max_retries_per_item=1,  # Fail quickly for test
+            retry_delay=0.1  # Short delay for test
+        )
+
+        async with limiter:
+            results = await process_chat_batch(limiter, requests, config)
+
+        # Check that the request failed as expected
+        assert len(results) == 1
+        assert results[0].success is False
+        assert results[0].error is not None
+        
+        # Check that user-friendly timeout messaging was printed
+        captured = capsys.readouterr()
+        assert "⏱️  TIMEOUT ERROR in batch item" in captured.out
+        assert "Current timeout setting:" in captured.out
+        assert "💡 How to fix this:" in captured.out
+        assert "1. Increase timeout: ChatLimiter.for_model" in captured.out
+        assert "2. Reduce concurrency: BatchConfig" in captured.out
+        assert "3. Current concurrency:" in captured.out

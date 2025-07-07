@@ -237,6 +237,57 @@ class TestChatLimiterRateLimitUpdates:
         assert limiter.state.token_limit == 60000
         assert limiter._limits_discovered is True
 
+    def test_timeout_configuration(self):
+        """Test that timeout parameter is properly configured."""
+        # Test default timeout
+        limiter = ChatLimiter(provider=Provider.OPENAI, api_key="sk-test")
+        assert limiter._user_timeout == 120.0
+        assert limiter.async_client.timeout.read == 120.0
+        assert limiter.sync_client.timeout.read == 120.0
+        
+        # Test custom timeout
+        custom_timeout = 180.0
+        limiter = ChatLimiter(provider=Provider.OPENAI, api_key="sk-test", timeout=custom_timeout)
+        assert limiter._user_timeout == custom_timeout
+        assert limiter.async_client.timeout.read == custom_timeout
+        assert limiter.sync_client.timeout.read == custom_timeout
+
+    def test_for_model_timeout_parameter(self):
+        """Test that for_model method accepts and uses timeout parameter."""
+        custom_timeout = 200.0
+        limiter = ChatLimiter.for_model("gpt-4o", api_key="sk-test", timeout=custom_timeout)
+        assert limiter._user_timeout == custom_timeout
+        assert limiter.async_client.timeout.read == custom_timeout
+        assert limiter.sync_client.timeout.read == custom_timeout
+
+    @pytest.mark.asyncio
+    async def test_enhanced_timeout_error_message(self):
+        """Test that timeout errors include helpful information."""
+        import httpx
+        from unittest.mock import AsyncMock
+        
+        # Create a mock client that raises ReadTimeout
+        mock_client = AsyncMock()
+        mock_client.request.side_effect = httpx.ReadTimeout("Test timeout")
+        
+        limiter = ChatLimiter(
+            provider=Provider.OPENAI, 
+            api_key="sk-test", 
+            timeout=90.0,
+            http_client=mock_client
+        )
+        
+        # Test that the enhanced error message is included
+        with pytest.raises(httpx.ReadTimeout) as exc_info:
+            async with limiter:
+                await limiter.request("POST", "/test")
+        
+        error_message = str(exc_info.value)
+        assert "💡 Timeout Error Help:" in error_message
+        assert "Current timeout: 90.0s" in error_message
+        assert "ChatLimiter.for_model('openai', timeout=150)" in error_message
+        assert "reduce batch concurrency" in error_message
+
     def test_update_rate_limits_no_change(self):
         """Test rate limit update with no changes after initial discovery."""
         # Start with user-provided limits to have initialized limiters

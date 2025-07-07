@@ -16,6 +16,8 @@ from typing import (
     TypeVar,
 )
 
+import httpx
+
 from tqdm.asyncio import tqdm as atqdm
 from tqdm import tqdm
 
@@ -354,10 +356,31 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
 
                 except Exception as e:
                     item.last_error = e
+                    
+                    # Check if this is a timeout error
+                    is_timeout_error = (
+                        isinstance(e, (httpx.ReadTimeout, httpx.ConnectTimeout)) or
+                        (hasattr(e, '__cause__') and isinstance(e.__cause__, (httpx.ReadTimeout, httpx.ConnectTimeout))) or
+                        'ReadTimeout' in str(type(e)) or 'timeout' in str(e).lower()
+                    )
 
-                    # Print traceback if verbose mode is enabled
+                    # Print user-friendly error messages
                     if self.config.verbose:
-                        print(f"Exception in batch item {item.id} (attempt {attempt + 1}):")
+                        if is_timeout_error:
+                            # Get current timeout from the limiter
+                            current_timeout = getattr(self.limiter, '_user_timeout', 120.0)
+                            print(f"⏱️  TIMEOUT ERROR in batch item {item.id} (attempt {attempt + 1}):")
+                            print(f"   Current timeout setting: {current_timeout} seconds")
+                            print(f"   The request took longer than {current_timeout}s to complete.")
+                            print(f"")
+                            print(f"💡 How to fix this:")
+                            print(f"   1. Increase timeout: ChatLimiter.for_model('{getattr(self.limiter, 'provider', 'your-model')}', timeout={current_timeout + 60})")
+                            print(f"   2. Reduce concurrency: BatchConfig(max_concurrent_requests={max(1, self.config.max_concurrent_requests // 2)})")
+                            print(f"   3. Current concurrency: {self.config.max_concurrent_requests} requests")
+                            print(f"")
+                        else:
+                            print(f"❌ Exception in batch item {item.id} (attempt {attempt + 1}):")
+                        
                         traceback.print_exc()
 
                     # If this is the last attempt or we should stop on error
@@ -377,8 +400,14 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                             attempt_count=item.attempt_count,
                         )
 
-                    # Wait before retry
-                    await asyncio.sleep(self.config.retry_delay * (2**attempt))
+                    # Wait before retry - longer for timeout errors
+                    if is_timeout_error:
+                        # For timeout errors, wait longer and suggest more aggressive backing off
+                        retry_delay = self.config.retry_delay * (3**attempt)  # More aggressive backoff
+                    else:
+                        retry_delay = self.config.retry_delay * (2**attempt)
+                    
+                    await asyncio.sleep(retry_delay)
 
         # This should never be reached, but added for type checking
         return BatchResult(
