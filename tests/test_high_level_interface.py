@@ -52,7 +52,7 @@ class TestChatLimiterForModel:
             provider="openai"
         )
         assert limiter.provider == Provider.OPENAI
-        
+
         # Test Provider enum override
         limiter = ChatLimiter.for_model(
             "custom-model",
@@ -64,11 +64,11 @@ class TestChatLimiterForModel:
     def test_for_model_with_env_api_key(self):
         """Test ChatLimiter.for_model with environment variable API key."""
         import os
-        
+
         # Set environment variable
         original_key = os.environ.get("OPENAI_API_KEY")
         os.environ["OPENAI_API_KEY"] = "test-env-key"
-        
+
         try:
             limiter = ChatLimiter.for_model("gpt-4o")
             assert limiter.provider == Provider.OPENAI
@@ -83,11 +83,11 @@ class TestChatLimiterForModel:
     def test_for_model_missing_env_key(self):
         """Test ChatLimiter.for_model with missing environment variable."""
         import os
-        
+
         # Ensure environment variable is not set
         original_key = os.environ.get("ANTHROPIC_API_KEY")
         os.environ.pop("ANTHROPIC_API_KEY", None)
-        
+
         try:
             with pytest.raises(ValueError, match="ANTHROPIC_API_KEY environment variable not set"):
                 ChatLimiter.for_model("claude-3-sonnet-20240229")

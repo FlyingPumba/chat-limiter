@@ -6,10 +6,10 @@ They are skipped if the required environment variables are not set.
 """
 
 import os
+
 import pytest
 
 from chat_limiter import ChatLimiter, Message, MessageRole
-
 
 # Skip conditions for each provider
 OPENAI_AVAILABLE = os.getenv("OPENAI_API_KEY") is not None
@@ -30,7 +30,7 @@ class TestOpenAIIntegration:
                 messages=[Message(role=MessageRole.USER, content="Hi")],
                 max_tokens=5
             )
-            
+
             assert response.provider == "openai"
             assert response.choices
             assert response.choices[0].message.content
@@ -48,19 +48,19 @@ class TestOpenAIIntegration:
                 messages=[Message(role=MessageRole.USER, content="Test")],
                 max_tokens=5
             )
-            
+
             # Check that rate limit info was updated
             limits = limiter.get_current_limits()
-            
+
             # OpenAI should have provided rate limit information
             assert limits["request_limit"] > 0
             assert limits["token_limit"] > 0
             assert limits["requests_used"] >= 1
-            
+
             # Check that we have recent rate limit info
             assert limiter.state.last_rate_limit_info is not None
             rate_info = limiter.state.last_rate_limit_info
-            
+
             # OpenAI typically provides these headers
             assert rate_info.requests_limit is not None or rate_info.requests_remaining is not None
 
@@ -74,7 +74,7 @@ class TestOpenAIIntegration:
                 prompt="Hi",
                 max_tokens=1
             )
-            
+
             assert isinstance(response, str)
             assert len(response) >= 0  # Could be empty with max_tokens=1
 
@@ -87,7 +87,7 @@ class TestOpenAIIntegration:
                 messages=[Message(role=MessageRole.USER, content="Hello")],
                 max_tokens=5
             )
-            
+
             assert response.provider == "openai"
             assert response.choices
             assert response.usage
@@ -106,7 +106,7 @@ class TestAnthropicIntegration:
                 messages=[Message(role=MessageRole.USER, content="Hi")],
                 max_tokens=5
             )
-            
+
             assert response.provider == "anthropic"
             assert response.choices
             assert response.choices[0].message.content
@@ -121,14 +121,14 @@ class TestAnthropicIntegration:
             Message(role=MessageRole.SYSTEM, content="Be very brief."),
             Message(role=MessageRole.USER, content="What is Python?")
         ]
-        
+
         async with ChatLimiter.for_model("claude-3-haiku-20240307") as limiter:
             response = await limiter.chat_completion(
                 model="claude-3-haiku-20240307",
                 messages=messages,
                 max_tokens=20
             )
-            
+
             assert response.provider == "anthropic"
             assert response.choices
             # Should have only one choice with assistant message
@@ -145,13 +145,13 @@ class TestAnthropicIntegration:
                 messages=[Message(role=MessageRole.USER, content="Test")],
                 max_tokens=5
             )
-            
+
             limits = limiter.get_current_limits()
-            
+
             # Anthropic should provide rate limit information
             assert limits["request_limit"] > 0
             assert limits["requests_used"] >= 1
-            
+
             # Check rate limit info
             assert limiter.state.last_rate_limit_info is not None
 
@@ -166,10 +166,10 @@ class TestOpenRouterIntegration:
         # Try multiple models to handle availability issues
         models_to_try = [
             "nousresearch/hermes-3-llama-3.1-405b:free",
-            "meta-llama/llama-3.2-3b-instruct:free", 
+            "meta-llama/llama-3.2-3b-instruct:free",
             "microsoft/wizardlm-2-8x22b:nitro"
         ]
-        
+
         success = False
         for model in models_to_try:
             try:
@@ -179,7 +179,7 @@ class TestOpenRouterIntegration:
                         messages=[Message(role=MessageRole.USER, content="Hi")],
                         max_tokens=5
                     )
-                    
+
                     assert response.provider == "openrouter"
                     if response.choices:  # Some models might return empty choices
                         assert response.choices[0].message.content is not None
@@ -187,7 +187,7 @@ class TestOpenRouterIntegration:
                         break
             except Exception:
                 continue
-        
+
         # If none of the free models work, just verify the provider detection works
         if not success:
             async with ChatLimiter.for_model("openai/gpt-4o-mini") as limiter:
@@ -203,7 +203,7 @@ class TestOpenRouterIntegration:
                 messages=[Message(role=MessageRole.USER, content="Test")],
                 max_tokens=5
             )
-            
+
             assert response.provider == "openrouter"
             assert response.choices
 
@@ -217,13 +217,13 @@ class TestProviderAutoDetection:
         """Test that OpenAI models are detected correctly."""
         async with ChatLimiter.for_model("gpt-4o-mini") as limiter:
             assert limiter.provider.value == "openai"
-            
+
             response = await limiter.simple_chat(
                 model="gpt-4o-mini",
                 prompt="Hi",
                 max_tokens=3
             )
-            
+
             assert isinstance(response, str)
 
     @pytest.mark.skipif(not ANTHROPIC_AVAILABLE, reason="ANTHROPIC_API_KEY not set")
@@ -232,13 +232,13 @@ class TestProviderAutoDetection:
         """Test that Anthropic models are detected correctly."""
         async with ChatLimiter.for_model("claude-3-haiku-20240307") as limiter:
             assert limiter.provider.value == "anthropic"
-            
+
             response = await limiter.simple_chat(
                 model="claude-3-haiku-20240307",
                 prompt="Hi",
                 max_tokens=3
             )
-            
+
             assert isinstance(response, str)
 
     @pytest.mark.skipif(not OPENROUTER_AVAILABLE, reason="OPENROUTER_API_KEY not set")
@@ -261,14 +261,14 @@ class TestProviderOverride:
             provider="openai"
         ) as limiter:
             assert limiter.provider.value == "openai"
-            
+
             # This should work even though model name doesn't match OpenAI pattern
             response = await limiter.chat_completion(
                 model="gpt-4o-mini",  # Use actual model for the request
                 messages=[Message(role=MessageRole.USER, content="Hi")],
                 max_tokens=3
             )
-            
+
             assert response.provider == "openai"
 
 
@@ -287,12 +287,12 @@ class TestRateLimitBehavior:
                     prompt=f"Test {i}",
                     max_tokens=1
                 )
-            
+
             limits = limiter.get_current_limits()
-            
+
             # Should have made 3 requests
             assert limits["requests_used"] >= 3
-            
+
             # Should have some token usage
             assert limits["tokens_used"] > 0
 
@@ -307,14 +307,14 @@ class TestRateLimitBehavior:
                 prompt="Test",
                 max_tokens=1
             )
-            
+
             # Verify usage is tracked
             limits_before = limiter.get_current_limits()
             assert limits_before["requests_used"] > 0
-            
+
             # Reset usage
             limiter.reset_usage_tracking()
-            
+
             # Verify usage is reset
             limits_after = limiter.get_current_limits()
             assert limits_after["requests_used"] == 0
@@ -330,7 +330,7 @@ class TestErrorHandling:
         """Test handling of invalid model names."""
         import httpx
         from tenacity import RetryError
-        
+
         async with ChatLimiter.for_model("gpt-4o-mini") as limiter:
             # OpenAI returns a 404 for invalid models, which should be raised
             try:
@@ -348,3 +348,4 @@ class TestErrorHandling:
             except (httpx.HTTPStatusError, RetryError):
                 # This is the expected behavior
                 assert True
+

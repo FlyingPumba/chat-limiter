@@ -170,7 +170,7 @@ class ChatLimiter:
             model: The model name (e.g., "gpt-4o", "claude-3-sonnet-20240229")
             api_key: API key for the provider. If None, will be read from environment variables
                     (OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY)
-            provider: Override provider detection. Can be "openai", "anthropic", "openrouter", 
+            provider: Override provider detection. Can be "openai", "anthropic", "openrouter",
                      or Provider enum. If None, will be auto-detected from model name
             **kwargs: Additional arguments passed to ChatLimiter
 
@@ -184,13 +184,12 @@ class ChatLimiter:
             # Auto-detect provider and use environment variable for API key
             async with ChatLimiter.for_model("gpt-4o") as limiter:
                 response = await limiter.simple_chat("gpt-4o", "Hello!")
-            
             # Override provider detection
             async with ChatLimiter.for_model("custom-model", provider="openai") as limiter:
                 response = await limiter.simple_chat("custom-model", "Hello!")
         """
         import os
-        
+
         # Determine provider
         if provider is not None:
             # Use provided provider
@@ -201,23 +200,24 @@ class ChatLimiter:
             provider_name = provider_enum.value
         else:
             # Auto-detect from model name
-            provider_name = detect_provider_from_model(model)
-            if not provider_name:
+            detected_provider = detect_provider_from_model(model)
+            if not detected_provider:
                 raise ValueError(
                     f"Could not determine provider from model '{model}'. "
                     "Please specify the provider explicitly using the 'provider' parameter."
                 )
+            provider_name = detected_provider
             provider_enum = Provider(provider_name)
-        
+
         # Determine API key
         if api_key is None:
             # Try to get from environment variables
             env_var_map = {
                 "openai": "OPENAI_API_KEY",
-                "anthropic": "ANTHROPIC_API_KEY", 
+                "anthropic": "ANTHROPIC_API_KEY",
                 "openrouter": "OPENROUTER_API_KEY"
             }
-            
+
             env_var = env_var_map.get(provider_name)
             if env_var:
                 api_key = os.getenv(env_var)

@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
+    Generic,
     TypeVar,
 )
 
@@ -58,7 +59,7 @@ class BatchConfig:
 
 
 @dataclass
-class BatchItem[BatchItemT]:
+class BatchItem(Generic[BatchItemT]):
     """A single item in a batch request."""
 
     # Item data
@@ -79,7 +80,7 @@ class BatchItem[BatchItemT]:
 
 
 @dataclass
-class BatchResult[BatchResultT]:
+class BatchResult(Generic[BatchResultT]):
     """Result of processing a batch item."""
 
     # Original item
@@ -99,7 +100,7 @@ class BatchResult[BatchResultT]:
     status_code: int | None = None
 
 
-class BatchProcessor[BatchItemT, BatchResultT](ABC):
+class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
     """Abstract base class for batch processing."""
 
     def __init__(
@@ -125,9 +126,7 @@ class BatchProcessor[BatchItemT, BatchResultT](ABC):
     def create_batch_items(
         self,
         items: list[BatchItemT],
-        request_fn: (
-            Callable[[BatchItemT], tuple[str, str, dict[str, Any]]] | None
-        ) = None,
+        request_fn: Callable[[BatchItemT], tuple[str, str, dict[str, Any]]] | None = None,
     ) -> list[BatchItem[BatchItemT]]:
         """Create batch items from raw data."""
         batch_items = []
@@ -152,9 +151,7 @@ class BatchProcessor[BatchItemT, BatchResultT](ABC):
     async def process_batch(
         self,
         items: list[BatchItemT] | list[BatchItem[BatchItemT]],
-        request_fn: (
-            Callable[[BatchItemT], tuple[str, str, dict[str, Any]]] | None
-        ) = None,
+        request_fn: Callable[[BatchItemT], tuple[str, str, dict[str, Any]]] | None = None,
     ) -> list[BatchResult[BatchResultT]]:
         """Process a batch of items asynchronously."""
         # Convert to batch items if needed
@@ -207,9 +204,7 @@ class BatchProcessor[BatchItemT, BatchResultT](ABC):
     def process_batch_sync(
         self,
         items: list[BatchItemT] | list[BatchItem[BatchItemT]],
-        request_fn: (
-            Callable[[BatchItemT], tuple[str, str, dict[str, Any]]] | None
-        ) = None,
+        request_fn: Callable[[BatchItemT], tuple[str, str, dict[str, Any]]] | None = None,
     ) -> list[BatchResult[BatchResultT]]:
         """Process a batch of items synchronously."""
         # Convert to batch items if needed
