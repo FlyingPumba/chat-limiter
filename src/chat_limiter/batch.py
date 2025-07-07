@@ -15,6 +15,9 @@ from typing import (
     TypeVar,
 )
 
+from tqdm.asyncio import tqdm as atqdm
+from tqdm import tqdm
+
 if TYPE_CHECKING:
     pass
 
@@ -168,6 +171,19 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
 
         # Process groups
         all_results = []
+        
+        # Calculate total items for progress tracking
+        total_items = sum(len(group_items) for group_items in grouped_items.values())
+        
+        # Initialize progress bar if enabled
+        progress_bar = None
+        if self.config.show_progress:
+            progress_bar = tqdm(
+                total=total_items,
+                desc=self.config.progress_desc,
+                unit="item"
+            )
+        
         for group_name, group_items in grouped_items.items():
             logger.info(
                 f"Processing group '{group_name}' with {len(group_items)} items"
@@ -176,9 +192,9 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
             # Create semaphore for concurrency control
             semaphore = asyncio.Semaphore(self.config.max_concurrent_requests)
 
-            # Process items with concurrency control
+            # Process items with concurrency control and progress tracking
             tasks = [
-                self._process_item_with_retry(item, semaphore) for item in group_items
+                self._process_item_with_retry(item, semaphore, progress_bar) for item in group_items
             ]
 
             # Wait for all tasks to complete
@@ -197,6 +213,10 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                     all_results.append(error_result)
                 else:
                     all_results.append(result)  # type: ignore
+
+        # Close progress bar if it was created
+        if progress_bar:
+            progress_bar.close()
 
         self._results = all_results
         return all_results
@@ -219,6 +239,18 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
         else:
             grouped_items = {"default": batch_items}
 
+        # Calculate total items for progress tracking
+        total_items = sum(len(group_items) for group_items in grouped_items.values())
+        
+        # Initialize progress bar if enabled
+        progress_bar = None
+        if self.config.show_progress:
+            progress_bar = tqdm(
+                total=total_items,
+                desc=self.config.progress_desc,
+                unit="item"
+            )
+
         # Process groups
         all_results = []
         for group_name, group_items in grouped_items.items():
@@ -230,7 +262,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
             with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
                 # Submit all tasks
                 future_to_item = {
-                    executor.submit(self._process_item_sync_with_retry, item): item
+                    executor.submit(self._process_item_sync_with_retry, item, progress_bar): item
                     for item in group_items
                 }
 
@@ -248,6 +280,10 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                             attempt_count=item.attempt_count,
                         )
                         all_results.append(error_result)
+
+        # Close progress bar if it was created
+        if progress_bar:
+            progress_bar.close()
 
         self._results = all_results
         return all_results
@@ -282,6 +318,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
         self,
         item: BatchItem[BatchItemT],
         semaphore: asyncio.Semaphore,
+        progress_bar: tqdm | None = None,
     ) -> BatchResult[BatchResultT]:
         """Process a single item with retry logic."""
         async with semaphore:
@@ -295,6 +332,10 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                 try:
                     # Process the item
                     result = await self.process_item(item)
+
+                    # Update progress bar on success
+                    if progress_bar:
+                        progress_bar.update(1)
 
                     # Success
                     return BatchResult(
@@ -313,6 +354,10 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                         attempt == self.config.max_retries_per_item
                         or self.config.stop_on_first_error
                     ):
+                        # Update progress bar on final failure
+                        if progress_bar:
+                            progress_bar.update(1)
+                            
                         return BatchResult(
                             item=item,
                             error=e,
@@ -336,6 +381,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
     def _process_item_sync_with_retry(
         self,
         item: BatchItem[BatchItemT],
+        progress_bar: tqdm | None = None,
     ) -> BatchResult[BatchResultT]:
         """Process a single item with retry logic (sync)."""
         import time
@@ -348,6 +394,10 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
             try:
                 # Process the item
                 result = self.process_item_sync(item)
+
+                # Update progress bar on success
+                if progress_bar:
+                    progress_bar.update(1)
 
                 # Success
                 return BatchResult(
@@ -366,6 +416,10 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                     attempt == self.config.max_retries_per_item
                     or self.config.stop_on_first_error
                 ):
+                    # Update progress bar on final failure
+                    if progress_bar:
+                        progress_bar.update(1)
+                        
                     return BatchResult(
                         item=item,
                         error=e,

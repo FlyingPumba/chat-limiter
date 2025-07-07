@@ -462,3 +462,82 @@ class TestConvenienceFunctions:
 
         assert len(results) == 1
         assert results[0].success is True
+
+    @pytest.mark.asyncio
+    async def test_progress_bar_async(
+        self, mock_async_client, mock_openai_response, capsys
+    ):
+        """Test that progress bar appears when show_progress=True."""
+        limiter = ChatLimiter(
+            provider=Provider.OPENAI, api_key="sk-test", http_client=mock_async_client
+        )
+
+        mock_async_client.request.return_value = mock_openai_response
+
+        requests = [
+            {"messages": [{"role": "user", "content": "Hello 1"}]},
+            {"messages": [{"role": "user", "content": "Hello 2"}]},
+            {"messages": [{"role": "user", "content": "Hello 3"}]},
+        ]
+        
+        # Test with progress bar enabled
+        config = BatchConfig(show_progress=True, progress_desc="Testing progress")
+
+        async with limiter:
+            results = await process_chat_batch(limiter, requests, config)
+
+        assert len(results) == 3
+        for result in results:
+            assert result.success is True
+
+    def test_progress_bar_sync(
+        self, mock_sync_client, mock_openai_response, capsys
+    ):
+        """Test that progress bar appears when show_progress=True in sync mode."""
+        limiter = ChatLimiter(
+            provider=Provider.OPENAI, api_key="sk-test", sync_http_client=mock_sync_client
+        )
+
+        mock_sync_client.request.return_value = mock_openai_response
+
+        requests = [
+            {"messages": [{"role": "user", "content": "Hello 1"}]},
+            {"messages": [{"role": "user", "content": "Hello 2"}]},
+            {"messages": [{"role": "user", "content": "Hello 3"}]},
+        ]
+        
+        # Test with progress bar enabled
+        config = BatchConfig(show_progress=True, progress_desc="Testing sync progress")
+
+        with limiter:
+            results = process_chat_batch_sync(limiter, requests, config)
+
+        assert len(results) == 3
+        for result in results:
+            assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_no_progress_bar_when_disabled(
+        self, mock_async_client, mock_openai_response
+    ):
+        """Test that no progress bar appears when show_progress=False."""
+        limiter = ChatLimiter(
+            provider=Provider.OPENAI, api_key="sk-test", http_client=mock_async_client
+        )
+
+        mock_async_client.request.return_value = mock_openai_response
+
+        requests = [
+            {"messages": [{"role": "user", "content": "Hello 1"}]},
+            {"messages": [{"role": "user", "content": "Hello 2"}]},
+        ]
+        
+        # Test with progress bar disabled
+        config = BatchConfig(show_progress=False)
+
+        async with limiter:
+            results = await process_chat_batch(limiter, requests, config)
+
+        assert len(results) == 2
+        for result in results:
+            assert result.success is True
