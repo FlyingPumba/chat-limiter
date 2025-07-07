@@ -161,7 +161,7 @@ class ChatLimiter:
         model: str,
         api_key: str | None = None,
         provider: str | Provider | None = None,
-        use_dynamic_discovery: bool = False,
+        use_dynamic_discovery: bool = True,
         **kwargs: Any,
     ) -> "ChatLimiter":
         """
@@ -173,8 +173,9 @@ class ChatLimiter:
                     (OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY)
             provider: Override provider detection. Can be "openai", "anthropic", "openrouter",
                      or Provider enum. If None, will be auto-detected from model name
-            use_dynamic_discovery: Whether to query live APIs for model availability.
-                                 Requires appropriate API keys to be available.
+            use_dynamic_discovery: Whether to query live APIs for model availability (default: True).
+                                 Requires appropriate API keys to be available. Falls back to
+                                 hardcoded model lists when disabled or when API calls fail.
             **kwargs: Additional arguments passed to ChatLimiter
 
         Returns:
@@ -184,7 +185,7 @@ class ChatLimiter:
             ValueError: If provider cannot be determined from model name or API key not found
 
         Example:
-            # Auto-detect provider and use environment variable for API key
+            # Auto-detect provider with dynamic discovery (default behavior)
             async with ChatLimiter.for_model("gpt-4o") as limiter:
                 response = await limiter.simple_chat("gpt-4o", "Hello!")
 
@@ -192,9 +193,9 @@ class ChatLimiter:
             async with ChatLimiter.for_model("custom-model", provider="openai") as limiter:
                 response = await limiter.simple_chat("custom-model", "Hello!")
 
-            # Use dynamic discovery to check if model exists via live API
-            async with ChatLimiter.for_model("new-model", use_dynamic_discovery=True) as limiter:
-                response = await limiter.simple_chat("new-model", "Hello!")
+            # Disable dynamic discovery to use only hardcoded model lists
+            async with ChatLimiter.for_model("gpt-4o", use_dynamic_discovery=False) as limiter:
+                response = await limiter.simple_chat("gpt-4o", "Hello!")
         """
         import os
 
