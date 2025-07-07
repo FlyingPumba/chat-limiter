@@ -30,6 +30,7 @@ class TestBatchConfig:
         assert config.show_progress is True
         assert config.stop_on_first_error is False
         assert config.collect_errors is True
+        assert config.verbose is False
         assert config.adaptive_batch_size is True
         assert config.group_by_model is True
         assert config.group_by_provider is True
@@ -541,3 +542,107 @@ class TestConvenienceFunctions:
         assert len(results) == 2
         for result in results:
             assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_verbose_mode_prints_traceback(
+        self, mock_async_client, capsys
+    ):
+        """Test that verbose=True prints tracebacks on exceptions."""
+        # Create a mock that raises an exception
+        mock_async_client.request.side_effect = Exception("Test exception")
+        
+        limiter = ChatLimiter(
+            provider=Provider.OPENAI, api_key="sk-test", http_client=mock_async_client
+        )
+
+        requests = [{"messages": [{"role": "user", "content": "Hello"}]}]
+        
+        # Test with verbose mode enabled
+        config = BatchConfig(
+            verbose=True,
+            show_progress=False,  # Disable progress bar for cleaner output
+            max_retries_per_item=1  # Fail quickly for test
+        )
+
+        async with limiter:
+            results = await process_chat_batch(limiter, requests, config)
+
+        # Check that the request failed as expected
+        assert len(results) == 1
+        assert results[0].success is False
+        assert results[0].error is not None
+        
+        # Check that traceback was printed to stdout and stderr
+        captured = capsys.readouterr()
+        assert "Exception in batch item" in captured.out
+        assert "Traceback" in captured.err
+        assert "Test exception" in captured.err
+
+    def test_verbose_mode_sync_prints_traceback(
+        self, mock_sync_client, capsys
+    ):
+        """Test that verbose=True prints tracebacks on exceptions in sync mode."""
+        # Create a mock that raises an exception
+        mock_sync_client.request.side_effect = Exception("Test sync exception")
+        
+        limiter = ChatLimiter(
+            provider=Provider.OPENAI, api_key="sk-test", sync_http_client=mock_sync_client
+        )
+
+        requests = [{"messages": [{"role": "user", "content": "Hello"}]}]
+        
+        # Test with verbose mode enabled
+        config = BatchConfig(
+            verbose=True,
+            show_progress=False,  # Disable progress bar for cleaner output
+            max_retries_per_item=1  # Fail quickly for test
+        )
+
+        with limiter:
+            results = process_chat_batch_sync(limiter, requests, config)
+
+        # Check that the request failed as expected
+        assert len(results) == 1
+        assert results[0].success is False
+        assert results[0].error is not None
+        
+        # Check that traceback was printed to stdout and stderr
+        captured = capsys.readouterr()
+        assert "Exception in batch item" in captured.out
+        assert "Traceback" in captured.err
+        assert "Test sync exception" in captured.err
+
+    @pytest.mark.asyncio
+    async def test_verbose_mode_disabled_no_traceback(
+        self, mock_async_client, capsys
+    ):
+        """Test that verbose=False doesn't print tracebacks on exceptions."""
+        # Create a mock that raises an exception
+        mock_async_client.request.side_effect = Exception("Silent test exception")
+        
+        limiter = ChatLimiter(
+            provider=Provider.OPENAI, api_key="sk-test", http_client=mock_async_client
+        )
+
+        requests = [{"messages": [{"role": "user", "content": "Hello"}]}]
+        
+        # Test with verbose mode disabled (default)
+        config = BatchConfig(
+            verbose=False,
+            show_progress=False,  # Disable progress bar for cleaner output
+            max_retries_per_item=1  # Fail quickly for test
+        )
+
+        async with limiter:
+            results = await process_chat_batch(limiter, requests, config)
+
+        # Check that the request failed as expected
+        assert len(results) == 1
+        assert results[0].success is False
+        assert results[0].error is not None
+        
+        # Check that NO traceback was printed to stdout or stderr
+        captured = capsys.readouterr()
+        assert "Exception in batch item" not in captured.out
+        assert "Traceback" not in captured.err
+        assert "Silent test exception" not in captured.err

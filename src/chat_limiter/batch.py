@@ -4,6 +4,7 @@ Batch processing functionality for handling multiple requests efficiently.
 
 import asyncio
 import logging
+import traceback
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -50,6 +51,7 @@ class BatchConfig:
     # Error handling
     stop_on_first_error: bool = False
     collect_errors: bool = True
+    verbose: bool = False
 
     # Batch size optimization
     adaptive_batch_size: bool = True
@@ -349,6 +351,11 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                 except Exception as e:
                     item.last_error = e
 
+                    # Print traceback if verbose mode is enabled
+                    if self.config.verbose:
+                        print(f"Exception in batch item {item.id} (attempt {attempt + 1}):")
+                        traceback.print_exc()
+
                     # If this is the last attempt or we should stop on error
                     if (
                         attempt == self.config.max_retries_per_item
@@ -410,6 +417,11 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
 
             except Exception as e:
                 item.last_error = e
+
+                # Print traceback if verbose mode is enabled
+                if self.config.verbose:
+                    print(f"Exception in batch item {item.id} (attempt {attempt + 1}):")
+                    traceback.print_exc()
 
                 # If this is the last attempt or we should stop on error
                 if (
