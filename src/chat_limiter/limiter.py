@@ -307,7 +307,7 @@ class ChatLimiter:
             )
 
     def _init_rate_limiters(self) -> None:
-        """Initialize PyrateLimiter instances."""
+        """Initialize PyrateLimiter instances."""        
         # Request rate limiter
         self.request_limiter = Limiter(
             Rate(
@@ -316,7 +316,7 @@ class ChatLimiter:
             )
         )
 
-        # Token rate limiter
+        # Token rate limiter  
         self.token_limiter = Limiter(
             Rate(
                 int(self.state.token_limit * self.config.token_buffer_ratio),
@@ -462,8 +462,7 @@ class ChatLimiter:
         # Wait for token rate limit if we have token estimation
         if estimated_tokens > 0:
             # Use estimated_tokens as cost for token bucket
-            for _ in range(estimated_tokens):
-                await asyncio.to_thread(self.token_limiter.try_acquire, "token")
+            await asyncio.to_thread(self.token_limiter.try_acquire, "token", estimated_tokens)
 
         try:
             yield
@@ -482,8 +481,7 @@ class ChatLimiter:
         # Wait for token rate limit if we have token estimation
         if estimated_tokens > 0:
             # Use estimated_tokens as cost for token bucket
-            for _ in range(estimated_tokens):
-                self.token_limiter.try_acquire("token")
+            self.token_limiter.try_acquire("token", estimated_tokens)
 
         try:
             yield
