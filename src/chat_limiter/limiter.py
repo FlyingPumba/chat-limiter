@@ -675,7 +675,7 @@ class ChatLimiter:
                     timeout_info = (
                         f"\n💡 Timeout Error Help:\n"
                         f"   Current timeout: {self._user_timeout}s\n"
-                        f"   To increase timeout, use: ChatLimiter.for_model('{self.provider.value}', timeout={self._user_timeout + 60})\n"
+                        f"   To increase timeout, use: ChatLimiter.for_model('{self.provider.value}', timeout={int(self._user_timeout + 60)})\n"
                         f"   Or reduce batch concurrency if processing multiple requests\n"
                         f"   Retries attempted: {self._user_max_retries}\n"
                     )
@@ -686,7 +686,7 @@ class ChatLimiter:
                 timeout_info = (
                     f"\n💡 Timeout Error Help:\n"
                     f"   Current timeout: {self._user_timeout}s\n"
-                    f"   To increase timeout, use: ChatLimiter.for_model('{self.provider.value}', timeout={self._user_timeout + 60})\n"
+                    f"   To increase timeout, use: ChatLimiter.for_model('{self.provider.value}', timeout={int(self._user_timeout + 60)})\n"
                     f"   Or reduce batch concurrency if processing multiple requests\n"
                 )
                 raise type(e)(str(e) + timeout_info) from e
@@ -779,7 +779,7 @@ class ChatLimiter:
             timeout_info = (
                 f"\n💡 Timeout Error Help:\n"
                 f"   Current timeout: {self._user_timeout}s\n"
-                f"   To increase timeout, use: ChatLimiter.for_model('{self.provider.value}', timeout={self._user_timeout + 60})\n"
+                f"   To increase timeout, use: ChatLimiter.for_model('{self.provider.value}', timeout={int(self._user_timeout + 60)})\n"
                 f"   Or reduce batch concurrency if processing multiple requests\n"
             )
             raise type(e)(str(e) + timeout_info) from e
