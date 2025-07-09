@@ -530,16 +530,44 @@ class ChatBatchProcessor(BatchProcessor[dict[str, Any], dict[str, Any]]):
 
     async def process_item(self, item: BatchItem[dict[str, Any]]) -> dict[str, Any]:
         """Process a single chat completion request."""
+        request_data = item.json_data or item.data
+        
+        # Log prompt if verbose mode is enabled
+        if self.config.verbose:
+            print(f"\n--- PROMPT (Item {item.id}) ---")
+            if "messages" in request_data:
+                for msg in request_data["messages"]:
+                    role = msg.get("role", "unknown")
+                    content = msg.get("content", "")
+                    print(f"{role.upper()}: {content}")
+            else:
+                print(f"REQUEST DATA: {request_data}")
+            print("--- END PROMPT ---\n")
+        
         # Make the request using the limiter
         response = await self.limiter.request(
             method=item.method,
             url=item.url,
-            json=item.json_data or item.data,
+            json=request_data,
         )
 
         # Parse response
         response.raise_for_status()
         result: dict[str, Any] = response.json()
+        
+        # Log response if verbose mode is enabled
+        if self.config.verbose:
+            print(f"\n--- RESPONSE (Item {item.id}) ---")
+            if "choices" in result and result["choices"]:
+                for i, choice in enumerate(result["choices"]):
+                    if "message" in choice:
+                        content = choice["message"].get("content", "")
+                        print(f"CHOICE {i}: {content}")
+                    elif "text" in choice:
+                        print(f"CHOICE {i}: {choice['text']}")
+            else:
+                print(f"FULL RESPONSE: {result}")
+            print("--- END RESPONSE ---\n")
 
         # Store response metadata
         item.metadata["response_headers"] = dict(response.headers)
@@ -549,16 +577,44 @@ class ChatBatchProcessor(BatchProcessor[dict[str, Any], dict[str, Any]]):
 
     def process_item_sync(self, item: BatchItem[dict[str, Any]]) -> dict[str, Any]:
         """Process a single chat completion request synchronously."""
+        request_data = item.json_data or item.data
+        
+        # Log prompt if verbose mode is enabled
+        if self.config.verbose:
+            print(f"\n--- PROMPT (Item {item.id}) ---")
+            if "messages" in request_data:
+                for msg in request_data["messages"]:
+                    role = msg.get("role", "unknown")
+                    content = msg.get("content", "")
+                    print(f"{role.upper()}: {content}")
+            else:
+                print(f"REQUEST DATA: {request_data}")
+            print("--- END PROMPT ---\n")
+        
         # Make the request using the limiter
         response = self.limiter.request_sync(
             method=item.method,
             url=item.url,
-            json=item.json_data or item.data,
+            json=request_data,
         )
 
         # Parse response
         response.raise_for_status()
         result: dict[str, Any] = response.json()
+        
+        # Log response if verbose mode is enabled
+        if self.config.verbose:
+            print(f"\n--- RESPONSE (Item {item.id}) ---")
+            if "choices" in result and result["choices"]:
+                for i, choice in enumerate(result["choices"]):
+                    if "message" in choice:
+                        content = choice["message"].get("content", "")
+                        print(f"CHOICE {i}: {content}")
+                    elif "text" in choice:
+                        print(f"CHOICE {i}: {choice['text']}")
+            else:
+                print(f"FULL RESPONSE: {result}")
+            print("--- END RESPONSE ---\n")
 
         # Store response metadata
         item.metadata["response_headers"] = dict(response.headers)
@@ -616,6 +672,14 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
         """Process a single chat completion request using high-level interface."""
         request = item.data
 
+        # Log prompt if verbose mode is enabled
+        if self.config.verbose:
+            print(f"\n--- PROMPT (Item {item.id}) ---")
+            print(f"MODEL: {request.model}")
+            for msg in request.messages:
+                print(f"{msg.role.value.upper()}: {msg.content}")
+            print("--- END PROMPT ---\n")
+
         # Use the high-level chat completion method
         response = await self.limiter.chat_completion(
             model=request.model,
@@ -631,11 +695,28 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
             top_k=request.top_k,
         )
 
+        # Log response if verbose mode is enabled
+        if self.config.verbose:
+            print(f"\n--- RESPONSE (Item {item.id}) ---")
+            print(f"MODEL: {response.model}")
+            if response.choices:
+                for i, choice in enumerate(response.choices):
+                    print(f"CHOICE {i}: {choice.message.content}")
+            print("--- END RESPONSE ---\n")
+
         return response
 
     def process_item_sync(self, item: BatchItem[ChatCompletionRequest]) -> ChatCompletionResponse:
         """Process a single chat completion request synchronously using high-level interface."""
         request = item.data
+
+        # Log prompt if verbose mode is enabled
+        if self.config.verbose:
+            print(f"\n--- PROMPT (Item {item.id}) ---")
+            print(f"MODEL: {request.model}")
+            for msg in request.messages:
+                print(f"{msg.role.value.upper()}: {msg.content}")
+            print("--- END PROMPT ---\n")
 
         # Use the high-level chat completion method (sync)
         response = self.limiter.chat_completion_sync(
@@ -651,6 +732,15 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
             presence_penalty=request.presence_penalty,
             top_k=request.top_k,
         )
+
+        # Log response if verbose mode is enabled
+        if self.config.verbose:
+            print(f"\n--- RESPONSE (Item {item.id}) ---")
+            print(f"MODEL: {response.model}")
+            if response.choices:
+                for i, choice in enumerate(response.choices):
+                    print(f"CHOICE {i}: {choice.message.content}")
+            print("--- END RESPONSE ---\n")
 
         return response
 
