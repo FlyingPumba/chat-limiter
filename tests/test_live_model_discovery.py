@@ -81,3 +81,30 @@ class TestLiveModelDiscovery:
         # This should always work regardless of dynamic discovery
         limiter = ChatLimiter.for_model("gpt-4.1", provider="openai", api_key="test-key")
         assert limiter.provider.value == "openai"
+
+    @pytest.mark.asyncio
+    async def test_o3_model_discovery(self):
+        """Test that the o3 model can be correctly found in the OpenAI provider using dynamic discovery."""
+        # First, get all available OpenAI models
+        models = await ModelDiscovery.get_openai_models(os.getenv("OPENAI_API_KEY"))
+        print(f"Available OpenAI models: {sorted(models)}")
+        
+        # Check specifically for o3 model variants
+        o3_models = [m for m in models if "o3" in m.lower()]
+        assert len(o3_models) > 0, "o3 model not found in OpenAI API response"
+
+        # Find the actual o3 model name
+        o3_model = next(m for m in models if "o3" in m.lower())
+        
+        # Test that ChatLimiter can handle it through dynamic discovery
+        limiter = ChatLimiter.for_model(o3_model, api_key=os.getenv("OPENAI_API_KEY"))
+        assert limiter.provider.value == "openai"
+        
+        # Test that the model is correctly identified as OpenAI
+        from chat_limiter.models import detect_provider_from_model_async
+        discovery_result = await detect_provider_from_model_async(
+            o3_model, 
+            {"openai": os.getenv("OPENAI_API_KEY")}
+        )
+        assert discovery_result.found_provider == "openai"
+        assert discovery_result.model_found == True

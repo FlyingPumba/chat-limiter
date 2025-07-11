@@ -70,7 +70,8 @@ class TestChatLimiterForModel:
         os.environ["OPENAI_API_KEY"] = "test-env-key"
 
         try:
-            limiter = ChatLimiter.for_model("gpt-4o")
+            # Disable dynamic discovery to avoid API calls with fake key
+            limiter = ChatLimiter.for_model("gpt-4o", use_dynamic_discovery=False)
             assert limiter.provider == Provider.OPENAI
             assert limiter.api_key == "test-env-key"
         finally:
@@ -90,7 +91,8 @@ class TestChatLimiterForModel:
 
         try:
             with pytest.raises(ValueError, match="ANTHROPIC_API_KEY environment variable not set"):
-                ChatLimiter.for_model("claude-3-sonnet-20240229")
+                # Disable dynamic discovery to avoid API calls
+                ChatLimiter.for_model("claude-3-sonnet-20240229", use_dynamic_discovery=False)
         finally:
             # Clean up
             if original_key is not None:

@@ -143,6 +143,7 @@ def detect_provider_from_model(model: str, use_dynamic_discovery: bool = False, 
     # If dynamic discovery is enabled and we have API keys, try that
     if use_dynamic_discovery and api_keys:
         from .models import detect_provider_from_model_sync
-        return detect_provider_from_model_sync(model, api_keys)
+        result = detect_provider_from_model_sync(model, api_keys)
+        return result.found_provider
 
     return None

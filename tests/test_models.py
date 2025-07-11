@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 from chat_limiter.models import (
     ModelDiscovery,
+    ModelDiscoveryResult,
     detect_provider_from_model_async,
     detect_provider_from_model_sync,
     clear_model_cache,
@@ -147,11 +148,17 @@ class TestProviderDetection:
     @pytest.mark.asyncio
     async def test_detect_provider_from_model_async_openrouter_pattern(self):
         """Test detection of OpenRouter pattern models."""
-        result = await detect_provider_from_model_async("openai/gpt-4o")
-        assert result == "openrouter"
-        
-        result = await detect_provider_from_model_async("anthropic/claude-3-sonnet")
-        assert result == "openrouter"
+        # Mock OpenRouter API call for pattern detection
+        with patch.object(ModelDiscovery, "get_openrouter_models") as mock_openrouter:
+            mock_openrouter.return_value = {"openai/gpt-4o", "anthropic/claude-3-sonnet"}
+            
+            result = await detect_provider_from_model_async("openai/gpt-4o")
+            assert result.found_provider == "openrouter"
+            assert result.model_found == True
+            
+            result = await detect_provider_from_model_async("anthropic/claude-3-sonnet")
+            assert result.found_provider == "openrouter"
+            assert result.model_found == True
 
     @pytest.mark.asyncio
     async def test_detect_provider_from_model_async_with_api_keys(self):
@@ -171,7 +178,9 @@ class TestProviderDetection:
              patch.object(ModelDiscovery, "get_openrouter_models", mock_openrouter):
             
             result = await detect_provider_from_model_async("custom-gpt-model", api_keys)
-            assert result == "openai"
+            assert result.found_provider == "openai"
+            assert result.model_found == True
+            assert result.openai_models == {"custom-gpt-model"}
             mock_openai.assert_called_once_with("test-openai-key")
 
     @pytest.mark.asyncio
@@ -189,15 +198,21 @@ class TestProviderDetection:
              patch.object(ModelDiscovery, "get_openrouter_models", mock_openrouter):
             
             result = await detect_provider_from_model_async("unknown-model", api_keys)
-            assert result is None
+            assert result.found_provider is None
+            assert result.model_found == False
+            assert result.openai_models == {"different-model"}
+            assert result.openrouter_models == {"yet-another-model"}
+            assert result.get_total_models_found() == 2  # Only OpenAI and OpenRouter called
 
     def test_detect_provider_from_model_sync(self):
         """Test synchronous provider detection."""
         with patch("asyncio.run") as mock_run:
-            mock_run.return_value = "openai"
+            mock_result = ModelDiscoveryResult(found_provider="openai", model_found=True)
+            mock_run.return_value = mock_result
             
             result = detect_provider_from_model_sync("test-model")
-            assert result == "openai"
+            assert result.found_provider == "openai"
+            assert result.model_found == True
 
     def test_detect_provider_from_model_sync_error(self):
         """Test sync detection raises exception on error."""
@@ -207,6 +222,40 @@ class TestProviderDetection:
             with pytest.raises(Exception):
                 detect_provider_from_model_sync("unknown-model")
 
+
+
+class TestModelDiscoveryResult:
+    """Test the ModelDiscoveryResult class."""
+    
+    def test_model_discovery_result_creation(self):
+        """Test creating ModelDiscoveryResult instances."""
+        result = ModelDiscoveryResult()
+        assert result.found_provider is None
+        assert result.model_found == False
+        assert result.openai_models is None
+        assert result.get_total_models_found() == 0
+        
+    def test_model_discovery_result_with_data(self):
+        """Test ModelDiscoveryResult with data."""
+        result = ModelDiscoveryResult(
+            found_provider="openai",
+            model_found=True,
+            openai_models={"gpt-4o", "gpt-3.5-turbo"},
+            anthropic_models={"claude-3-sonnet"},
+            errors={"openrouter": "API key invalid"}
+        )
+        
+        assert result.found_provider == "openai"
+        assert result.model_found == True
+        assert result.get_total_models_found() == 3
+        assert result.errors["openrouter"] == "API key invalid"
+        
+        all_models = result.get_all_models()
+        assert "openai" in all_models
+        assert "anthropic" in all_models
+        assert "openrouter" not in all_models  # Not set
+        assert len(all_models["openai"]) == 2
+        assert len(all_models["anthropic"]) == 1
 
 
 class TestCacheManagement:

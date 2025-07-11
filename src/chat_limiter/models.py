@@ -7,6 +7,7 @@ instead of relying on hardcoded lists.
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -17,6 +18,45 @@ logger = logging.getLogger(__name__)
 # Cache for model lists to avoid hitting APIs too frequently
 _model_cache: dict[str, dict[str, Any]] = {}
 _cache_duration = timedelta(hours=1)  # Cache models for 1 hour
+
+
+@dataclass
+class ModelDiscoveryResult:
+    """Result of model discovery process."""
+    
+    # Discovery result
+    found_provider: str | None = None
+    model_found: bool = False
+    
+    # All models found for each provider
+    openai_models: set[str] | None = None
+    anthropic_models: set[str] | None = None
+    openrouter_models: set[str] | None = None
+    
+    # Errors encountered during discovery
+    errors: dict[str, str] | None = None
+    
+    def get_all_models(self) -> dict[str, set[str]]:
+        """Get all models organized by provider."""
+        result = {}
+        if self.openai_models is not None:
+            result["openai"] = self.openai_models
+        if self.anthropic_models is not None:
+            result["anthropic"] = self.anthropic_models
+        if self.openrouter_models is not None:
+            result["openrouter"] = self.openrouter_models
+        return result
+    
+    def get_total_models_found(self) -> int:
+        """Get total number of models found across all providers."""
+        total = 0
+        if self.openai_models:
+            total += len(self.openai_models)
+        if self.anthropic_models:
+            total += len(self.anthropic_models)
+        if self.openrouter_models:
+            total += len(self.openrouter_models)
+        return total
 
 
 class ModelDiscovery:
@@ -47,9 +87,7 @@ class ModelDiscovery:
 
                 for model in data.get("data", []):
                     model_id = model.get("id", "")
-                    # Filter for chat completion models
-                    if any(keyword in model_id.lower() for keyword in ["gpt", "chat"]):
-                        models.add(model_id)
+                    models.add(model_id)
 
                 # Cache the result
                 _model_cache[cache_key] = {
@@ -92,9 +130,7 @@ class ModelDiscovery:
 
                 for model in data.get("data", []):
                     model_id = model.get("id", "")
-                    # Filter for Claude models
-                    if "claude" in model_id.lower():
-                        models.add(model_id)
+                    models.add(model_id)
 
                 # Cache the result
                 _model_cache[cache_key] = {
@@ -173,7 +209,7 @@ class ModelDiscovery:
 async def detect_provider_from_model_async(
     model: str,
     api_keys: dict[str, str] | None = None
-) -> str | None:
+) -> ModelDiscoveryResult:
     """
     Detect provider from model name using live API queries.
 
@@ -182,14 +218,23 @@ async def detect_provider_from_model_async(
         api_keys: Dictionary of API keys {"openai": "sk-...", "anthropic": "sk-ant-..."}
 
     Returns:
-        Provider name or None if not found
+        ModelDiscoveryResult with discovery information
     """
     if not api_keys:
         api_keys = {}
 
+    result = ModelDiscoveryResult(errors={})
+
     # First try simple pattern matching for known formats
     if "/" in model:  # OpenRouter format
-        return "openrouter"
+        result.found_provider = "openrouter"
+        result.model_found = True
+        # Still try to get OpenRouter models to populate the result
+        try:
+            result.openrouter_models = await ModelDiscovery.get_openrouter_models(api_keys.get("openrouter"))
+        except Exception as e:
+            result.errors["openrouter"] = str(e)
+        return result
 
     # Create all tasks
     tasks = []
@@ -215,24 +260,37 @@ async def detect_provider_from_model_async(
         # Wait for all results
         results = await asyncio.gather(*coroutines, return_exceptions=True)
         
-        # Check results in order
-        for provider_name, result in zip(provider_names, results):
-            if isinstance(result, Exception):
-                logger.debug(f"Failed to check {provider_name} for model {model}: {result}")
+        # Process results and store all model information
+        for provider_name, models_result in zip(provider_names, results):
+            if isinstance(models_result, Exception):
+                logger.debug(f"Failed to check {provider_name} for model {model}: {models_result}")
+                result.errors[provider_name] = str(models_result)
                 continue
-            if model in result:
-                return provider_name
+            
+            # Store models in result
+            if provider_name == "openai":
+                result.openai_models = models_result
+            elif provider_name == "anthropic":
+                result.anthropic_models = models_result
+            elif provider_name == "openrouter":
+                result.openrouter_models = models_result
+            
+            # Check if our target model was found
+            if model in models_result and not result.model_found:
+                result.found_provider = provider_name
+                result.model_found = True
                 
     except Exception as e:
         logger.debug(f"Failed to run dynamic discovery for model {model}: {e}")
+        result.errors["general"] = str(e)
 
-    return None
+    return result
 
 
 def detect_provider_from_model_sync(
     model: str,
     api_keys: dict[str, str] | None = None
-) -> str | None:
+) -> ModelDiscoveryResult:
     """Synchronous version of detect_provider_from_model_async."""
     # Check if we're already in an async context
     try:

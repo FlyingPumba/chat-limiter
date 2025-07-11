@@ -264,13 +264,37 @@ class ChatLimiter:
                     if key_value:
                         api_keys_for_discovery[provider_key] = key_value
 
-            detected_provider = detect_provider_from_model(model, use_dynamic_discovery, api_keys_for_discovery)
+            # Try dynamic discovery first to get more detailed information
+            discovery_result = None
+            if use_dynamic_discovery and api_keys_for_discovery:
+                from .models import detect_provider_from_model_sync
+                discovery_result = detect_provider_from_model_sync(model, api_keys_for_discovery)
+                detected_provider = discovery_result.found_provider
+            else:
+                detected_provider = detect_provider_from_model(model, use_dynamic_discovery, api_keys_for_discovery)
+            
             if not detected_provider:
                 discovery_msg = " with dynamic API discovery" if use_dynamic_discovery else ""
-                raise ValueError(
-                    f"Could not determine provider from model '{model}'{discovery_msg}. "
-                    "Please specify the provider explicitly using the 'provider' parameter."
-                )
+                error_msg = f"Could not determine provider from model '{model}'{discovery_msg}. "
+                
+                # Add detailed information about available models if we have discovery results
+                if discovery_result and discovery_result.get_total_models_found() > 0:
+                    error_msg += f"\n\nFound {discovery_result.get_total_models_found()} models across providers:\n"
+                    for provider_name, models in discovery_result.get_all_models().items():
+                        error_msg += f"  {provider_name}: {len(models)} models\n"
+                        for example in sorted(list(models)):
+                            error_msg += f"    - {example}\n"
+                    error_msg += "\nPlease check the model name or specify the provider explicitly using the 'provider' parameter."
+                else:
+                    error_msg += "Please specify the provider explicitly using the 'provider' parameter."
+                
+                # Add information about discovery errors if any
+                if discovery_result and discovery_result.errors:
+                    error_msg += f"\n\nDiscovery errors encountered:\n"
+                    for provider_name, error in discovery_result.errors.items():
+                        error_msg += f"  {provider_name}: {error}\n"
+                
+                raise ValueError(error_msg)
             assert detected_provider is not None  # Help MyPy understand type narrowing
             provider_name = detected_provider
             provider_enum = Provider(provider_name)
