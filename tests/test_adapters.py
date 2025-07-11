@@ -169,6 +169,55 @@ class TestOpenAIAdapter:
         assert parsed.model == "gpt-4o"  # Falls back to request model
         assert len(parsed.choices) == 0  # No choices in error response
 
+    def test_is_reasoning_model(self):
+        """Test reasoning model detection."""
+        adapter = OpenAIAdapter()
+        
+        # Test reasoning models
+        assert adapter.is_reasoning_model("o1-preview") == True
+        assert adapter.is_reasoning_model("o1-mini") == True
+        assert adapter.is_reasoning_model("o3-mini") == True
+        assert adapter.is_reasoning_model("o3-2024-01-01") == True
+        assert adapter.is_reasoning_model("o4-preview") == True
+        
+        # Test non-reasoning models
+        assert adapter.is_reasoning_model("gpt-4o") == False
+        assert adapter.is_reasoning_model("gpt-4o-mini") == False
+        assert adapter.is_reasoning_model("gpt-4-turbo") == False
+        assert adapter.is_reasoning_model("gpt-3.5-turbo") == False
+
+    def test_format_request_reasoning_model(self):
+        """Test request formatting for reasoning models uses max_completion_tokens."""
+        adapter = OpenAIAdapter()
+        request = ChatCompletionRequest(
+            model="o3-mini",
+            messages=[Message(role=MessageRole.USER, content="Hello!")],
+            max_tokens=100
+        )
+
+        formatted = adapter.format_request(request)
+
+        # Should use max_completion_tokens for reasoning models
+        assert "max_completion_tokens" in formatted
+        assert formatted["max_completion_tokens"] == 100
+        assert "max_tokens" not in formatted
+
+    def test_format_request_non_reasoning_model(self):
+        """Test request formatting for non-reasoning models uses max_tokens."""
+        adapter = OpenAIAdapter()
+        request = ChatCompletionRequest(
+            model="gpt-4o",
+            messages=[Message(role=MessageRole.USER, content="Hello!")],
+            max_tokens=100
+        )
+
+        formatted = adapter.format_request(request)
+
+        # Should use max_tokens for non-reasoning models
+        assert "max_tokens" in formatted
+        assert formatted["max_tokens"] == 100
+        assert "max_completion_tokens" not in formatted
+
     def test_get_endpoint(self):
         """Test OpenAI endpoint."""
         adapter = OpenAIAdapter()

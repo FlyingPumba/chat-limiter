@@ -43,6 +43,10 @@ class ProviderAdapter(ABC):
 class OpenAIAdapter(ProviderAdapter):
     """Adapter for OpenAI API."""
 
+    def is_reasoning_model(self, model_name: str) -> bool:
+        """Check if the model is a reasoning model that requires max_completion_tokens."""
+        return model_name.startswith(("o1", "o3", "o4"))
+
     def format_request(self, request: ChatCompletionRequest) -> dict[str, Any]:
         """Convert to OpenAI format."""
         # Convert messages
@@ -61,7 +65,11 @@ class OpenAIAdapter(ProviderAdapter):
 
         # Add optional parameters
         if request.max_tokens is not None:
-            openai_request["max_tokens"] = request.max_tokens
+            # Use max_completion_tokens for reasoning models (o1, o3, o4)
+            if self.is_reasoning_model(request.model):
+                openai_request["max_completion_tokens"] = request.max_tokens
+            else:
+                openai_request["max_tokens"] = request.max_tokens
         if request.temperature is not None:
             openai_request["temperature"] = request.temperature
         if request.top_p is not None:
