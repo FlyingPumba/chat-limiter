@@ -3,6 +3,8 @@
 # This ensures the script exits immediately if any command fails, including the tests.
 set -e
 
+echo "Starting deployment process..."
+
 # Parse command line arguments
 MAJOR_VERSION=false
 while [[ $# -gt 0 ]]; do
@@ -20,7 +22,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "Starting deployment process..."
+echo "Running tests..."
+uv run pytest
 
 # Get current version from pyproject.toml
 CURRENT_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
@@ -49,16 +52,17 @@ rm pyproject.toml.bak
 
 echo "Version bumped to: $NEW_VERSION"
 
+echo "Re-generating uv lockfile..."
+uv lock
+
 # Commit and push changes
 echo "Committing version bump..."
 git add pyproject.toml
+git add uv.lock
 git commit -m "Bump version to $NEW_VERSION"
 
 echo "Pushing to remote..."
 git push
-
-echo "Running tests..."
-uv run pytest
 
 echo "Building project..."
 uv run python -m build
