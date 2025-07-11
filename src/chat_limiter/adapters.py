@@ -83,6 +83,15 @@ class OpenAIAdapter(ProviderAdapter):
         original_request: ChatCompletionRequest
     ) -> ChatCompletionResponse:
         """Parse OpenAI response."""
+        # Check for errors first
+        has_error = False
+        error_message = None
+        
+        if "error" in response_data:
+            has_error = True
+            error_data = response_data["error"]
+            error_message = error_data.get("message", "Unknown error")
+
         choices = []
         for choice_data in response_data.get("choices", []):
             message_data = choice_data.get("message", {})
@@ -113,6 +122,8 @@ class OpenAIAdapter(ProviderAdapter):
             choices=choices,
             usage=usage,
             created=response_data.get("created"),
+            has_error=has_error,
+            error_message=error_message,
             provider="openai",
             raw_response=response_data
         )
@@ -173,6 +184,15 @@ class AnthropicAdapter(ProviderAdapter):
         original_request: ChatCompletionRequest
     ) -> ChatCompletionResponse:
         """Parse Anthropic response."""
+        # Check for errors first
+        has_error = False
+        error_message = None
+        
+        if "error" in response_data:
+            has_error = True
+            error_data = response_data["error"]
+            error_message = error_data.get("message", "Unknown error")
+
         # Anthropic returns content differently
         content_blocks = response_data.get("content", [])
         content = ""
@@ -209,6 +229,8 @@ class AnthropicAdapter(ProviderAdapter):
             choices=[choice],
             usage=usage,
             created=int(time.time()),  # Anthropic doesn't provide created timestamp
+            has_error=has_error,
+            error_message=error_message,
             provider="anthropic",
             raw_response=response_data
         )
@@ -262,6 +284,15 @@ class OpenRouterAdapter(ProviderAdapter):
         original_request: ChatCompletionRequest
     ) -> ChatCompletionResponse:
         """Parse OpenRouter response (similar to OpenAI)."""
+        # Check for errors first
+        has_error = False
+        error_message = None
+        
+        if "error" in response_data:
+            has_error = True
+            error_data = response_data["error"]
+            error_message = error_data.get("message", "Unknown error")
+
         choices = []
         for choice_data in response_data.get("choices", []):
             message_data = choice_data.get("message", {})
@@ -292,6 +323,8 @@ class OpenRouterAdapter(ProviderAdapter):
             choices=choices,
             usage=usage,
             created=response_data.get("created"),
+            has_error=has_error,
+            error_message=error_message,
             provider="openrouter",
             raw_response=response_data
         )

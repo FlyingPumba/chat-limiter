@@ -148,34 +148,32 @@ class ChatLimiter:
         self.api_key = api_key
         self.enable_adaptive_limits = enable_adaptive_limits
         self.enable_token_estimation = enable_token_estimation
-        
+
         # Store user-provided overrides
         self._user_request_limit = request_limit
         self._user_token_limit = token_limit
         self._user_max_retries = max_retries or 3  # Default to 3 if not provided
         self._user_base_backoff = base_backoff or 1.0  # Default to 1.0 if not provided
-        self._user_timeout = timeout or 120.0  # Default to 120 seconds for better reliability
+        self._user_timeout = (
+            timeout or 120.0
+        )  # Default to 120 seconds for better reliability
 
         # Determine initial limits (user override, config default, or None for discovery)
         initial_request_limit = (
-            request_limit or 
-            self.config.default_request_limit or 
-            None
+            request_limit or self.config.default_request_limit or None
         )
-        initial_token_limit = (
-            token_limit or 
-            self.config.default_token_limit or 
-            None
-        )
-        
+        initial_token_limit = token_limit or self.config.default_token_limit or None
+
         # Initialize state - will be None if no defaults and no discovery yet
         self.state = LimiterState(
             request_limit=initial_request_limit,
             token_limit=initial_token_limit,
         )
-        
+
         # Flag to track if we need to discover limits
-        self._limits_discovered = initial_request_limit is not None and initial_token_limit is not None
+        self._limits_discovered = (
+            initial_request_limit is not None and initial_token_limit is not None
+        )
 
         # Initialize HTTP clients
         self._init_http_clients(http_client, sync_http_client, **kwargs)
@@ -186,7 +184,7 @@ class ChatLimiter:
         # Context manager state
         self._async_context_active = False
         self._sync_context_active = False
-        
+
         # Verbose mode (can be set by batch processor)
         self._verbose_mode = False
 
@@ -256,7 +254,7 @@ class ChatLimiter:
                 env_var_map = {
                     "openai": "OPENAI_API_KEY",
                     "anthropic": "ANTHROPIC_API_KEY",
-                    "openrouter": "OPENROUTER_API_KEY"
+                    "openrouter": "OPENROUTER_API_KEY",
                 }
 
                 for provider_key, env_var in env_var_map.items():
@@ -268,32 +266,42 @@ class ChatLimiter:
             discovery_result = None
             if use_dynamic_discovery and api_keys_for_discovery:
                 from .models import detect_provider_from_model_sync
-                discovery_result = detect_provider_from_model_sync(model, api_keys_for_discovery)
+
+                discovery_result = detect_provider_from_model_sync(
+                    model, api_keys_for_discovery
+                )
                 detected_provider = discovery_result.found_provider
             else:
-                detected_provider = detect_provider_from_model(model, use_dynamic_discovery, api_keys_for_discovery)
-            
+                detected_provider = detect_provider_from_model(
+                    model, use_dynamic_discovery, api_keys_for_discovery
+                )
+
             if not detected_provider:
-                discovery_msg = " with dynamic API discovery" if use_dynamic_discovery else ""
+                discovery_msg = (
+                    " with dynamic API discovery" if use_dynamic_discovery else ""
+                )
                 error_msg = f"Could not determine provider from model '{model}'{discovery_msg}. "
-                
+
                 # Add detailed information about available models if we have discovery results
                 if discovery_result and discovery_result.get_total_models_found() > 0:
                     error_msg += f"\n\nFound {discovery_result.get_total_models_found()} models across providers:\n"
-                    for provider_name, models in discovery_result.get_all_models().items():
+                    for (
+                        provider_name,
+                        models,
+                    ) in discovery_result.get_all_models().items():
                         error_msg += f"  {provider_name}: {len(models)} models\n"
                         for example in sorted(list(models)):
                             error_msg += f"    - {example}\n"
                     error_msg += "\nPlease check the model name or specify the provider explicitly using the 'provider' parameter."
                 else:
                     error_msg += "Please specify the provider explicitly using the 'provider' parameter."
-                
+
                 # Add information about discovery errors if any
                 if discovery_result and discovery_result.errors:
                     error_msg += f"\n\nDiscovery errors encountered:\n"
                     for provider_name, error in discovery_result.errors.items():
                         error_msg += f"  {provider_name}: {error}\n"
-                
+
                 raise ValueError(error_msg)
             assert detected_provider is not None  # Help MyPy understand type narrowing
             provider_name = detected_provider
@@ -305,7 +313,7 @@ class ChatLimiter:
             env_var_map = {
                 "openai": "OPENAI_API_KEY",
                 "anthropic": "ANTHROPIC_API_KEY",
-                "openrouter": "OPENROUTER_API_KEY"
+                "openrouter": "OPENROUTER_API_KEY",
             }
 
             env_var_name: str | None = env_var_map.get(provider_name)
@@ -322,14 +330,14 @@ class ChatLimiter:
                 )
 
         return cls(
-            provider=provider_enum, 
-            api_key=api_key, 
+            provider=provider_enum,
+            api_key=api_key,
             request_limit=request_limit,
             token_limit=token_limit,
             max_retries=max_retries,
             base_backoff=base_backoff,
             timeout=timeout,
-            **kwargs
+            **kwargs,
         )
 
     def _init_http_clients(
@@ -390,11 +398,15 @@ class ChatLimiter:
             self._effective_request_limit = None
             self._effective_token_limit = None
             return
-            
+
         # Calculate effective limits with buffer
-        effective_request_limit = int(self.state.request_limit * self.config.request_buffer_ratio)
-        effective_token_limit = int(self.state.token_limit * self.config.token_buffer_ratio)
-        
+        effective_request_limit = int(
+            self.state.request_limit * self.config.request_buffer_ratio
+        )
+        effective_token_limit = int(
+            self.state.token_limit * self.config.token_buffer_ratio
+        )
+
         # Request rate limiter
         self.request_limiter = Limiter(
             Rate(
@@ -403,14 +415,14 @@ class ChatLimiter:
             )
         )
 
-        # Token rate limiter  
+        # Token rate limiter
         self.token_limiter = Limiter(
             Rate(
                 effective_token_limit,
                 Duration.MINUTE,
             )
         )
-        
+
         # Store effective limits for logging
         self._effective_request_limit = effective_request_limit
         self._effective_token_limit = effective_token_limit
@@ -427,14 +439,19 @@ class ChatLimiter:
         # Discover rate limits if supported
         if self.config.supports_dynamic_limits:
             await self._discover_rate_limits()
-        
+
         # Print rate limit information if verbose mode is enabled
         if self._verbose_mode:
             self._print_rate_limit_info()
 
         return self
 
-    async def __aexit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
         """Async context manager exit."""
         self._async_context_active = False
         await self.async_client.aclose()
@@ -451,14 +468,19 @@ class ChatLimiter:
         # Discover rate limits if supported
         if self.config.supports_dynamic_limits:
             self._discover_rate_limits_sync()
-        
+
         # Print rate limit information if verbose mode is enabled
         if self._verbose_mode:
             self._print_rate_limit_info()
 
         return self
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
         """Sync context manager exit."""
         self._sync_context_active = False
         self.sync_client.close()
@@ -479,7 +501,9 @@ class ChatLimiter:
             else:
                 # For other providers, we'll discover limits on first request
                 if self._verbose_mode:
-                    print(f"Rate limit discovery will happen on first request for {self.provider.value}")
+                    print(
+                        f"Rate limit discovery will happen on first request for {self.provider.value}"
+                    )
                 logger.info(
                     f"Rate limit discovery will happen on first request for {self.provider.value}"
                 )
@@ -507,7 +531,9 @@ class ChatLimiter:
     def _update_rate_limits(self, rate_limit_info: RateLimitInfo) -> None:
         """Update rate limits based on response headers."""
         updated = False
-        was_uninitialized = self.state.request_limit is None or self.state.token_limit is None
+        was_uninitialized = (
+            self.state.request_limit is None or self.state.token_limit is None
+        )
 
         # Update request limits
         if (
@@ -518,7 +544,9 @@ class ChatLimiter:
             self.state.request_limit = rate_limit_info.requests_limit
             updated = True
             if was_uninitialized:
-                message = f"Discovered request limit: {self.state.request_limit} req/min"
+                message = (
+                    f"Discovered request limit: {self.state.request_limit} req/min"
+                )
                 if self._verbose_mode:
                     print(message)
                 logger.info(message)
@@ -550,11 +578,14 @@ class ChatLimiter:
         if updated:
             # Reinitialize rate limiters with new limits
             self._init_rate_limiters()
-            
+
             # Update limits_discovered flag if both limits are now available
-            if self.state.request_limit is not None and self.state.token_limit is not None:
+            if (
+                self.state.request_limit is not None
+                and self.state.token_limit is not None
+            ):
                 self._limits_discovered = True
-            
+
             if was_uninitialized:
                 message = "Rate limiters initialized after discovery"
                 if self._verbose_mode:
@@ -593,13 +624,19 @@ class ChatLimiter:
         # Check if rate limiters are initialized
         if self.request_limiter is None or self.token_limiter is None:
             # Limits not yet discovered - this request will help discover them
-            logger.info("Rate limits not yet discovered, proceeding without rate limiting for discovery")
+            logger.info(
+                "Rate limits not yet discovered, proceeding without rate limiting for discovery"
+            )
         else:
             # Wait for request rate limit
             await asyncio.to_thread(self.request_limiter.try_acquire, "request")
 
             # Wait for token rate limit if we have token estimation and limiters are initialized
-            if estimated_tokens > 0 and self.token_limiter is not None and self._effective_token_limit is not None:
+            if (
+                estimated_tokens > 0
+                and self.token_limiter is not None
+                and self._effective_token_limit is not None
+            ):
                 # Check if request is too large for bucket capacity
                 if estimated_tokens > self._effective_token_limit:
                     # Log warning for large requests
@@ -611,15 +648,21 @@ class ChatLimiter:
                     # Acquire tokens in chunks to avoid bucket overflow
                     remaining_tokens = estimated_tokens
                     while remaining_tokens > 0:
-                        chunk_size = min(remaining_tokens, self._effective_token_limit // 2)
-                        await asyncio.to_thread(self.token_limiter.try_acquire, "token", chunk_size)
+                        chunk_size = min(
+                            remaining_tokens, self._effective_token_limit // 2
+                        )
+                        await asyncio.to_thread(
+                            self.token_limiter.try_acquire, "token", chunk_size
+                        )
                         remaining_tokens -= chunk_size
                         if remaining_tokens > 0:
                             # Brief pause to let bucket refill
                             await asyncio.sleep(0.1)
                 else:
                     # Normal acquisition for smaller requests
-                    await asyncio.to_thread(self.token_limiter.try_acquire, "token", estimated_tokens)
+                    await asyncio.to_thread(
+                        self.token_limiter.try_acquire, "token", estimated_tokens
+                    )
 
         try:
             yield
@@ -635,13 +678,19 @@ class ChatLimiter:
         # Check if rate limiters are initialized
         if self.request_limiter is None or self.token_limiter is None:
             # Limits not yet discovered - this request will help discover them
-            logger.info("Rate limits not yet discovered, proceeding without rate limiting for discovery")
+            logger.info(
+                "Rate limits not yet discovered, proceeding without rate limiting for discovery"
+            )
         else:
             # Wait for request rate limit
             self.request_limiter.try_acquire("request")
 
             # Wait for token rate limit if we have token estimation and limiters are initialized
-            if estimated_tokens > 0 and self.token_limiter is not None and self._effective_token_limit is not None:
+            if (
+                estimated_tokens > 0
+                and self.token_limiter is not None
+                and self._effective_token_limit is not None
+            ):
                 # Check if request is too large for bucket capacity
                 if estimated_tokens > self._effective_token_limit:
                     # Log warning for large requests
@@ -653,7 +702,9 @@ class ChatLimiter:
                     # Acquire tokens in chunks to avoid bucket overflow
                     remaining_tokens = estimated_tokens
                     while remaining_tokens > 0:
-                        chunk_size = min(remaining_tokens, self._effective_token_limit // 2)
+                        chunk_size = min(
+                            remaining_tokens, self._effective_token_limit // 2
+                        )
                         self.token_limiter.try_acquire("token", chunk_size)
                         remaining_tokens -= chunk_size
                         if remaining_tokens > 0:
@@ -676,7 +727,14 @@ class ChatLimiter:
         return retry(
             stop=stop_after_attempt(self._user_max_retries),
             wait=wait_exponential(multiplier=self._user_base_backoff, min=1, max=60),
-            retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.RequestError, httpx.ReadTimeout, httpx.ConnectTimeout)),
+            retry=retry_if_exception_type(
+                (
+                    httpx.HTTPStatusError,
+                    httpx.RequestError,
+                    httpx.ReadTimeout,
+                    httpx.ConnectTimeout,
+                )
+            ),
         )
 
     async def request(
@@ -689,12 +747,20 @@ class ChatLimiter:
     ) -> httpx.Response:
         """Wrapper that applies retry decorator dynamically."""
         try:
-            return await self._get_retry_decorator()(self._request_impl)(method, url, json=json, **kwargs)
+            return await self._get_retry_decorator()(self._request_impl)(
+                method, url, json=json, **kwargs
+            )
         except Exception as e:
             # Check if this is a retry error wrapping a timeout
-            if hasattr(e, 'last_attempt') and e.last_attempt and e.last_attempt.exception():
+            if (
+                hasattr(e, "last_attempt")
+                and e.last_attempt
+                and e.last_attempt.exception()
+            ):
                 original_exception = e.last_attempt.exception()
-                if isinstance(original_exception, (httpx.ReadTimeout, httpx.ConnectTimeout)):
+                if isinstance(
+                    original_exception, (httpx.ReadTimeout, httpx.ConnectTimeout)
+                ):
                     # Enhance timeout error with helpful information
                     timeout_info = (
                         f"\n💡 Timeout Error Help:\n"
@@ -703,8 +769,10 @@ class ChatLimiter:
                         f"   Or reduce batch concurrency if processing multiple requests\n"
                         f"   Retries attempted: {self._user_max_retries}\n"
                     )
-                    raise type(original_exception)(str(original_exception) + timeout_info) from e
-            
+                    raise type(original_exception)(
+                        str(original_exception) + timeout_info
+                    ) from e
+
             # For direct timeout errors (shouldn't happen due to retry decorator but just in case)
             if isinstance(e, (httpx.ReadTimeout, httpx.ConnectTimeout)):
                 timeout_info = (
@@ -714,7 +782,7 @@ class ChatLimiter:
                     f"   Or reduce batch concurrency if processing multiple requests\n"
                 )
                 raise type(e)(str(e) + timeout_info) from e
-            
+
             # Re-raise any other exceptions unchanged
             raise
 
@@ -794,10 +862,19 @@ class ChatLimiter:
         retry_decorator = retry(
             stop=stop_after_attempt(self._user_max_retries),
             wait=wait_exponential(multiplier=self._user_base_backoff, min=1, max=60),
-            retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.RequestError, httpx.ReadTimeout, httpx.ConnectTimeout)),
+            retry=retry_if_exception_type(
+                (
+                    httpx.HTTPStatusError,
+                    httpx.RequestError,
+                    httpx.ReadTimeout,
+                    httpx.ConnectTimeout,
+                )
+            ),
         )
         try:
-            return retry_decorator(self._request_sync_impl)(method, url, json=json, **kwargs)
+            return retry_decorator(self._request_sync_impl)(
+                method, url, json=json, **kwargs
+            )
         except (httpx.ReadTimeout, httpx.ConnectTimeout) as e:
             # Enhance timeout error with helpful information
             timeout_info = (
@@ -936,7 +1013,7 @@ class ChatLimiter:
             top_p=top_p,
             stop=stop,
             stream=stream,
-            **kwargs
+            **kwargs,
         )
 
         # Get the appropriate adapter
@@ -947,9 +1024,7 @@ class ChatLimiter:
 
         # Make the HTTP request
         response = await self.request(
-            "POST",
-            adapter.get_endpoint(),
-            json=formatted_request
+            "POST", adapter.get_endpoint(), json=formatted_request
         )
 
         # Parse the response
@@ -1000,7 +1075,7 @@ class ChatLimiter:
             top_p=top_p,
             stop=stop,
             stream=stream,
-            **kwargs
+            **kwargs,
         )
 
         # Get the appropriate adapter
@@ -1011,9 +1086,7 @@ class ChatLimiter:
 
         # Make the HTTP request
         response = self.request_sync(
-            "POST",
-            adapter.get_endpoint(),
-            json=formatted_request
+            "POST", adapter.get_endpoint(), json=formatted_request
         )
 
         # Parse the response
@@ -1049,7 +1122,7 @@ class ChatLimiter:
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
-            **kwargs
+            **kwargs,
         )
 
         if response.choices:
@@ -1083,36 +1156,40 @@ class ChatLimiter:
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
-            **kwargs
+            **kwargs,
         )
 
         if response.choices:
             return response.choices[0].message.content
         return ""
-    
+
     def set_verbose_mode(self, verbose: bool) -> None:
         """Set verbose mode for detailed logging."""
         self._verbose_mode = verbose
-    
+
     def _print_rate_limit_info(self) -> None:
         """Print current rate limit configuration."""
         print(f"\n=== Rate Limit Configuration for {self.provider.value.title()} ===")
         print(f"Provider: {self.provider.value}")
         print(f"Base URL: {self.config.base_url}")
-        
+
         # Handle None values for limits
         if self.state.request_limit is not None:
             effective_req = self._effective_request_limit or "not calculated"
-            print(f"Request Limit: {self.state.request_limit}/minute (effective: {effective_req}/minute)")
+            print(
+                f"Request Limit: {self.state.request_limit}/minute (effective: {effective_req}/minute)"
+            )
         else:
             print("Request Limit: Not yet discovered (will be fetched from API)")
-            
+
         if self.state.token_limit is not None:
             effective_tok = self._effective_token_limit or "not calculated"
-            print(f"Token Limit: {self.state.token_limit}/minute (effective: {effective_tok}/minute)")
+            print(
+                f"Token Limit: {self.state.token_limit}/minute (effective: {effective_tok}/minute)"
+            )
         else:
             print("Token Limit: Not yet discovered (will be fetched from API)")
-            
+
         print(f"Request Buffer Ratio: {self.config.request_buffer_ratio}")
         print(f"Token Buffer Ratio: {self.config.token_buffer_ratio}")
         print(f"Adaptive Limits: {self.enable_adaptive_limits}")

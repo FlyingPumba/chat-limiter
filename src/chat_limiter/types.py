@@ -70,6 +70,10 @@ class ChatCompletionResponse:
     usage: Usage | None = None
     created: int | None = None
 
+    # Error information
+    has_error: bool = False
+    error_message: str | None = None
+
     # Provider-specific metadata
     provider: str | None = None
     raw_response: dict[str, Any] | None = None
