@@ -120,43 +120,30 @@ class TestLiveModelDiscovery:
         # First, get all available OpenAI models to find o3
         models = await ModelDiscovery.get_openai_models(os.getenv("OPENAI_API_KEY"))
         o3_models = [m for m in models if "o3" in m.lower()]
-        
-        if not o3_models:
-            pytest.skip("No o3 models found in OpenAI API response")
+        assert len(o3_models) > 0, "No o3 models found in OpenAI API response"
         
         # Try each o3 model until we find one that works for chat
-        o3_model = None
+        o3_model = "o3-mini"
         successful_response = None
-        
-        for candidate_model in o3_models:
-            print(f"Testing with o3 model: {candidate_model}")
-            
-            try:
-                # Create a ChatLimiter for the o3 model
-                async with ChatLimiter.for_model(candidate_model, api_key=os.getenv("OPENAI_API_KEY")) as limiter:
-                    # Make a simple request
-                    response = await limiter.chat_completion(
-                        model=candidate_model,
-                        messages=[Message(role=MessageRole.USER, content="Hello! Just say 'Hi' back.")],
-                        max_tokens=50  # Increased to allow for actual response
-                    )
+
+        try:
+            # Create a ChatLimiter for the o3 model
+            async with ChatLimiter.for_model(o3_model, api_key=os.getenv("OPENAI_API_KEY")) as limiter:
+                # Make a simple request
+                response = await limiter.chat_completion(
+                    model=o3_model,
+                    messages=[Message(role=MessageRole.USER, content="Hello! Just say 'Hi' back.")],
+                    max_tokens=50  # Increased to allow for actual response
+                )
+                
+                # Check if this model works for chat
+                if not response.has_error:
+                    successful_response = response
+                else:
+                    print(f"Model {o3_model} failed with error: {response.error_message}")
                     
-                    # Check if this model works for chat
-                    if not response.has_error:
-                        o3_model = candidate_model
-                        successful_response = response
-                        break
-                    else:
-                        print(f"Model {candidate_model} failed with error: {response.error_message}")
-                        # Continue trying other models
-                        continue
-                        
-            except Exception as e:
-                print(f"Model {candidate_model} failed with exception: {e}")
-                continue
-        
-        if o3_model is None:
-            pytest.skip("No o3 models found that support chat completions")
+        except Exception as e:
+            print(f"Model {o3_model} failed with exception: {e}")
         
         # Test the successful response
         assert successful_response.has_error == False, f"Request failed with error: {successful_response.error_message}"
