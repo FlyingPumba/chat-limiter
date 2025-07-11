@@ -65,6 +65,7 @@ echo "Pushing to remote..."
 git push
 
 echo "Building project..."
+rm -r dist
 uv run python -m build
 
 echo "Publishing to PyPI..."
