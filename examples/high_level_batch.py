@@ -46,8 +46,8 @@ async def simple_batch_example():
         results = await process_chat_completion_batch(limiter, requests)
         
         # Analyze results
-        successful = [r for r in results if r.success]
-        failed = [r for r in results if not r.success]
+        successful = [r for r in results if not r.has_error]
+        failed = [r for r in results if r.has_error]
         
         print(f"✅ Successful: {len(successful)}")
         print(f"❌ Failed: {len(failed)}")
@@ -108,7 +108,7 @@ async def custom_requests_batch_example():
         
         # Show detailed results
         for i, result in enumerate(results):
-            if result.success and result.result:
+            if not result.has_error and result.result:
                 response = result.result
                 print(f"\n📝 Request {i+1}:")
                 print(f"   Model: {response.model}")
@@ -117,7 +117,7 @@ async def custom_requests_batch_example():
                 if response.usage:
                     print(f"   Tokens: {response.usage.total_tokens}")
             else:
-                print(f"\n❌ Request {i+1} failed: {result.error}")
+                print(f"\n❌ Request {i+1} failed: {result.error_message}")
 
 
 async def multi_provider_batch_example():
@@ -141,7 +141,7 @@ async def multi_provider_batch_example():
         
         async with ChatLimiter.for_model("gpt-4o", openai_key) as limiter:
             openai_results = await process_chat_completion_batch(limiter, openai_requests)
-            successful = [r for r in openai_results if r.success]
+            successful = [r for r in openai_results if not r.has_error]
             print(f"✅ OpenAI: {len(successful)}/{len(openai_results)} successful")
     
     # Anthropic batch
@@ -156,7 +156,7 @@ async def multi_provider_batch_example():
         
         async with ChatLimiter.for_model("claude-3-5-sonnet-20241022", anthropic_key) as limiter:
             anthropic_results = await process_chat_completion_batch(limiter, anthropic_requests)
-            successful = [r for r in anthropic_results if r.success]
+            successful = [r for r in anthropic_results if not r.has_error]
             print(f"✅ Anthropic: {len(successful)}/{len(anthropic_results)} successful")
 
 
@@ -178,7 +178,7 @@ def sync_batch_example():
         # Process synchronously
         results = process_chat_completion_batch_sync(limiter, requests)
         
-        successful = [r for r in results if r.success]
+        successful = [r for r in results if not r.has_error]
         print(f"✅ Completed {len(successful)} requests synchronously")
         
         # Show a sample result
@@ -217,8 +217,8 @@ async def advanced_batch_configuration():
         results = await process_chat_completion_batch(limiter, requests, config)
         
         # Get statistics
-        successful = [r for r in results if r.success]
-        failed = [r for r in results if not r.success]
+        successful = [r for r in results if not r.has_error]
+        failed = [r for r in results if r.has_error]
         
         print(f"📊 Batch Statistics:")
         print(f"   Total requests: {len(results)}")
@@ -268,15 +268,15 @@ async def error_handling_batch_example():
         async with ChatLimiter.for_model("gpt-4o", os.getenv("OPENAI_API_KEY", "demo-key")) as limiter:
             results = await process_chat_completion_batch(limiter, requests, config)
             
-            successful = [r for r in results if r.success]
-            failed = [r for r in results if not r.success]
+            successful = [r for r in results if not r.has_error]
+            failed = [r for r in results if r.has_error]
             
             print(f"✅ Successful requests: {len(successful)}")
             print(f"❌ Failed requests: {len(failed)}")
             
             # Show error details
             for i, result in enumerate(failed):
-                print(f"   Error {i+1}: {result.error}")
+                print(f"   Error {i+1}: {result.error_message}")
                 
     except Exception as e:
         print(f"✅ Caught batch processing error: {type(e).__name__}")
@@ -299,10 +299,10 @@ async def comparison_example():
     
     async with ChatLimiter.for_model("gpt-4o", os.getenv("OPENAI_API_KEY", "demo-key")) as limiter:
         high_level_results = await process_chat_completion_batch(limiter, requests)
-        print(f"   ✅ Processed {len([r for r in high_level_results if r.success])} requests")
+        print(f"   ✅ Processed {len([r for r in high_level_results if not r.has_error])} requests")
         
         # Show first response using high-level objects
-        if high_level_results and high_level_results[0].success and high_level_results[0].result:
+        if high_level_results and not high_level_results[0].has_error and high_level_results[0].result:
             response = high_level_results[0].result
             print(f"   📝 Response: {response.choices[0].message.content if response.choices else 'No content'}")
             print(f"   📊 Usage: {response.usage}")

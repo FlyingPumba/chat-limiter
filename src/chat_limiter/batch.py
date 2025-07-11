@@ -95,12 +95,14 @@ class BatchResult(Generic[BatchResultT]):
 
     # Result data
     result: BatchResultT | None = None
-    error: Exception | None = None
 
     # Processing metadata
-    success: bool = False
     duration: float = 0.0
     attempt_count: int = 0
+
+    # Error information
+    has_error: bool = False
+    error_message: str | None = None
 
     # Response metadata
     response_headers: dict[str, str] = field(default_factory=dict)
@@ -214,8 +216,8 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                     # Create error result
                     error_result: BatchResult[BatchResultT] = BatchResult(
                         item=group_items[i],
-                        error=result,
-                        success=False,
+                        has_error=True,
+                        error_message=str(result),
                         attempt_count=group_items[i].attempt_count,
                     )
                     all_results.append(error_result)
@@ -283,8 +285,8 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                     except Exception as e:
                         error_result: BatchResult[BatchResultT] = BatchResult(
                             item=item,
-                            error=e,
-                            success=False,
+                            has_error=True,
+                            error_message=str(e),
                             attempt_count=item.attempt_count,
                         )
                         all_results.append(error_result)
@@ -349,7 +351,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                     return BatchResult(
                         item=item,
                         result=result,
-                        success=True,
+                        has_error=False,
                         duration=time.time() - start_time,
                         attempt_count=item.attempt_count,
                     )
@@ -394,8 +396,8 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                             
                         return BatchResult(
                             item=item,
-                            error=e,
-                            success=False,
+                            has_error=True,
+                            error_message=str(e),
                             duration=time.time() - start_time,
                             attempt_count=item.attempt_count,
                         )
@@ -412,8 +414,8 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
         # This should never be reached, but added for type checking
         return BatchResult(
             item=item,
-            error=Exception("Unexpected error in retry logic"),
-            success=False,
+            has_error=True,
+            error_message="Unexpected error in retry logic",
             duration=time.time() - start_time,
             attempt_count=item.attempt_count,
         )
@@ -443,7 +445,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                 return BatchResult(
                     item=item,
                     result=result,
-                    success=True,
+                    has_error=False,
                     duration=time.time() - start_time,
                     attempt_count=item.attempt_count,
                 )
@@ -467,8 +469,8 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                         
                     return BatchResult(
                         item=item,
-                        error=e,
-                        success=False,
+                        has_error=True,
+                        error_message=str(e),
                         duration=time.time() - start_time,
                         attempt_count=item.attempt_count,
                     )
@@ -479,8 +481,8 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
         # This should never be reached, but added for type checking
         return BatchResult(
             item=item,
-            error=Exception("Unexpected error in retry logic"),
-            success=False,
+            has_error=True,
+            error_message="Unexpected error in retry logic",
             duration=time.time() - start_time,
             attempt_count=item.attempt_count,
         )
@@ -490,16 +492,16 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
         if not self._results:
             return 0.0
 
-        successful = sum(1 for r in self._results if r.success)
+        successful = sum(1 for r in self._results if not r.has_error)
         return successful / len(self._results)
 
     def get_successful_results(self) -> list[BatchResult[BatchResultT]]:
         """Get only successful results."""
-        return [r for r in self._results if r.success]
+        return [r for r in self._results if not r.has_error]
 
     def get_failed_results(self) -> list[BatchResult[BatchResultT]]:
         """Get only failed results."""
-        return [r for r in self._results if not r.success]
+        return [r for r in self._results if r.has_error]
 
     def get_stats(self) -> dict[str, Any]:
         """Get comprehensive processing statistics."""
@@ -695,6 +697,10 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
             top_k=request.top_k,
         )
 
+        # Check for errors in the response
+        if response.has_error:
+            raise Exception(f"Chat completion failed: {response.error_message}")
+
         # Log response if verbose mode is enabled
         if self.config.verbose:
             print(f"\n--- RESPONSE (Item {item.id}) ---")
@@ -732,6 +738,10 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
             presence_penalty=request.presence_penalty,
             top_k=request.top_k,
         )
+
+        # Check for errors in the response
+        if response.has_error:
+            raise Exception(f"Chat completion failed: {response.error_message}")
 
         # Log response if verbose mode is enabled
         if self.config.verbose:
