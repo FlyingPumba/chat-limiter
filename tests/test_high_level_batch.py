@@ -162,7 +162,7 @@ class TestChatCompletionBatchProcessor:
         results = await processor.process_batch(requests)
 
         assert len(results) == 3
-        assert all(not result.has_error for result in results)
+        assert all(result.success for result in results)
         assert all(result.result is not None for result in results)
 
         # Check that chat_completion was called for each request
@@ -183,7 +183,7 @@ class TestChatCompletionBatchProcessor:
         results = processor.process_batch_sync(requests)
 
         assert len(results) == 3
-        assert all(not result.has_error for result in results)
+        assert all(result.success for result in results)
         assert all(result.result is not None for result in results)
 
         # Check that chat_completion_sync was called for each request
@@ -248,7 +248,7 @@ class TestConvenienceFunctions:
         results = await process_chat_completion_batch(mock_limiter, requests)
 
         assert len(results) == 2
-        assert all(not result.has_error for result in results)
+        assert all(result.success for result in results)
 
         # Check the responses
         assert "Response to: Hello!" in results[0].result.choices[0].message.content
@@ -264,7 +264,7 @@ class TestConvenienceFunctions:
         results = process_chat_completion_batch_sync(mock_limiter, requests)
 
         assert len(results) == 2
-        assert all(not result.has_error for result in results)
+        assert all(result.success for result in results)
 
         # Check the responses
         assert "Response to: Hello!" in results[0].result.choices[0].message.content
@@ -287,7 +287,7 @@ class TestConvenienceFunctions:
         results = await process_chat_completion_batch(mock_limiter, requests, config)
 
         assert len(results) == 3
-        assert all(not result.has_error for result in results)
+        assert all(result.success for result in results)
 
     @pytest.mark.asyncio
     async def test_process_chat_completion_batch_with_errors(self, mock_limiter):
@@ -329,8 +329,8 @@ class TestConvenienceFunctions:
         assert len(results) == 3
 
         # Check that we have successes and failures
-        successful = [r for r in results if not r.has_error]
-        failed = [r for r in results if r.has_error]
+        successful = [r for r in results if r.success]
+        failed = [r for r in results if not r.success]
 
         assert len(successful) == 2
         assert len(failed) == 1
@@ -406,7 +406,7 @@ class TestBatchProcessingIntegration:
 
         # Verify results
         assert len(results) == 2
-        assert all(not result.has_error for result in results)
+        assert all(result.success for result in results)
 
         # Check that responses match the prompts
         response_contents = [result.result.choices[0].message.content for result in results if result.result]

@@ -71,7 +71,7 @@ class ChatCompletionResponse:
     created: int | None = None
 
     # Error information
-    has_error: bool = False
+    success: bool = True
     error_message: str | None = None
 
     # Provider-specific metadata

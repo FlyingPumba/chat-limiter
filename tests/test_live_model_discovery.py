@@ -137,7 +137,7 @@ class TestLiveModelDiscovery:
                 )
                 
                 # Check if this model works for chat
-                if not response.has_error:
+                if response.success:
                     successful_response = response
                 else:
                     print(f"Model {o3_model} failed with error: {response.error_message}")
@@ -146,7 +146,7 @@ class TestLiveModelDiscovery:
             print(f"Model {o3_model} failed with exception: {e}")
         
         # Test the successful response
-        assert successful_response.has_error == False, f"Request failed with error: {successful_response.error_message}"
+        assert successful_response.success == True, f"Request failed with error: {successful_response.error_message}"
         assert successful_response.error_message is None
         
         # Verify we got a response

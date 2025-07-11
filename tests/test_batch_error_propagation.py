@@ -37,7 +37,7 @@ class TestBatchErrorPropagation:
             id="test-id",
             model="gpt-3.5-turbo",
             choices=[],
-            has_error=True,
+            success=False,
             error_message="API authentication failed"
         )
         
@@ -58,7 +58,7 @@ class TestBatchErrorPropagation:
         assert len(results) == 1
         result = results[0]
         
-        assert result.has_error is True
+        assert result.success is False
         assert result.error_message is not None
         assert "Chat completion failed: API authentication failed" in result.error_message
         assert result.result is None
@@ -70,7 +70,7 @@ class TestBatchErrorPropagation:
             id="test-id",
             model="gpt-3.5-turbo",
             choices=[],
-            has_error=True,
+            success=False,
             error_message="Rate limit exceeded"
         )
         
@@ -91,7 +91,7 @@ class TestBatchErrorPropagation:
         assert len(results) == 1
         result = results[0]
         
-        assert result.has_error is True
+        assert result.success is False
         assert result.error_message is not None
         assert "Chat completion failed: Rate limit exceeded" in result.error_message
         assert result.result is None
@@ -104,7 +104,7 @@ class TestBatchErrorPropagation:
             id="test-id",
             model="gpt-3.5-turbo",
             choices=[],
-            has_error=False,
+            success=True,
             error_message=None
         )
         
@@ -125,7 +125,7 @@ class TestBatchErrorPropagation:
         assert len(results) == 1
         result = results[0]
         
-        assert result.has_error is False
+        assert result.success is True
         assert result.error_message is None
         assert result.result == success_response
 
@@ -137,7 +137,7 @@ class TestBatchErrorPropagation:
             id="success-id",
             model="gpt-3.5-turbo",
             choices=[],
-            has_error=False,
+            success=True,
             error_message=None
         )
         
@@ -145,7 +145,7 @@ class TestBatchErrorPropagation:
             id="error-id",
             model="gpt-3.5-turbo",
             choices=[],
-            has_error=True,
+            success=False,
             error_message="Model not available"
         )
         
@@ -180,12 +180,12 @@ class TestBatchErrorPropagation:
         assert len(results) == 2
         
         # First result should be successful
-        assert results[0].has_error is False
+        assert results[0].success is True
         assert results[0].error_message is None
         assert results[0].result == success_response
         
         # Second result should have error
-        assert results[1].has_error is True
+        assert results[1].success is False
         assert results[1].error_message is not None
         assert "Chat completion failed: Model not available" in results[1].error_message
         assert results[1].result is None

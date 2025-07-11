@@ -100,7 +100,7 @@ class TestBatchResult:
         result = BatchResult(
             item=item,
             result=result_data,
-            has_error=False,
+            success=True,
             duration=1.5,
             attempt_count=1,
             status_code=200,
@@ -108,7 +108,7 @@ class TestBatchResult:
 
         assert result.item == item
         assert result.result == result_data
-        assert result.has_error is False
+        assert result.success is True
         assert result.duration == 1.5
         assert result.attempt_count == 1
         assert result.status_code == 200
@@ -121,7 +121,7 @@ class TestBatchResult:
 
         result = BatchResult(
             item=item,
-            has_error=True,
+            success=False,
             error_message=str(error),
             duration=0.5,
             attempt_count=3,
@@ -130,7 +130,7 @@ class TestBatchResult:
 
         assert result.item == item
         assert result.result is None
-        assert result.has_error is True
+        assert result.success is False
         assert result.error_message == "Test error"
         assert result.duration == 0.5
         assert result.attempt_count == 3
@@ -242,7 +242,7 @@ class TestChatBatchProcessor:
         assert len(results) == 2
         for result in results:
             assert isinstance(result, BatchResult)
-            assert result.has_error is False
+            assert result.success is True
             assert result.error_message is None
 
     def test_process_batch_sync_success(self, processor, mock_openai_response):
@@ -259,7 +259,7 @@ class TestChatBatchProcessor:
         assert len(results) == 2
         for result in results:
             assert isinstance(result, BatchResult)
-            assert result.has_error is False
+            assert result.success is True
             assert result.error_message is None
 
     @pytest.mark.asyncio
@@ -291,8 +291,8 @@ class TestChatBatchProcessor:
         results = await processor.process_batch(raw_items)
 
         assert len(results) == 2
-        assert results[0].has_error is False
-        assert results[1].has_error is True
+        assert results[0].success is True
+        assert results[1].success is False
         assert results[1].error_message is not None
 
     def test_group_items_by_model(self, processor):
@@ -331,14 +331,14 @@ class TestChatBatchProcessor:
         successful_result = BatchResult(
             item=BatchItem(data={}),
             result={"success": True},
-            has_error=False,
+            success=True,
             duration=1.0,
             attempt_count=1,
         )
         failed_result = BatchResult(
             item=BatchItem(data={}),
             error_message="Test error",
-            has_error=True,
+            success=False,
             duration=0.5,
             attempt_count=3,
         )
@@ -360,12 +360,12 @@ class TestChatBatchProcessor:
         successful_result = BatchResult(
             item=BatchItem(data={}),
             result={"success": True},
-            has_error=False,
+            success=True,
         )
         failed_result = BatchResult(
             item=BatchItem(data={}),
             error_message="Test error",
-            has_error=True,
+            success=False,
         )
 
         processor._results = [successful_result, failed_result]
@@ -380,12 +380,12 @@ class TestChatBatchProcessor:
         successful_result = BatchResult(
             item=BatchItem(data={}),
             result={"success": True},
-            has_error=False,
+            success=True,
         )
         failed_result = BatchResult(
             item=BatchItem(data={}),
             error_message="Test error",
-            has_error=True,
+            success=False,
         )
 
         processor._results = [successful_result, failed_result]
@@ -419,7 +419,7 @@ class TestConvenienceFunctions:
         assert len(results) == 2
         for result in results:
             assert isinstance(result, BatchResult)
-            assert result.has_error is False
+            assert result.success is True
 
     def test_process_chat_batch_sync(self, mock_sync_client, mock_openai_response):
         """Test process_chat_batch_sync convenience function."""
@@ -442,7 +442,7 @@ class TestConvenienceFunctions:
         assert len(results) == 2
         for result in results:
             assert isinstance(result, BatchResult)
-            assert result.has_error is False
+            assert result.success is True
 
     @pytest.mark.asyncio
     async def test_process_chat_batch_with_config(
@@ -462,7 +462,7 @@ class TestConvenienceFunctions:
             results = await process_chat_batch(limiter, requests, config)
 
         assert len(results) == 1
-        assert results[0].has_error is False
+        assert results[0].success is True
 
     @pytest.mark.asyncio
     async def test_progress_bar_async(
@@ -489,7 +489,7 @@ class TestConvenienceFunctions:
 
         assert len(results) == 3
         for result in results:
-            assert result.has_error is False
+            assert result.success is True
 
     def test_progress_bar_sync(
         self, mock_sync_client, mock_openai_response, capsys
@@ -515,7 +515,7 @@ class TestConvenienceFunctions:
 
         assert len(results) == 3
         for result in results:
-            assert result.has_error is False
+            assert result.success is True
 
     @pytest.mark.asyncio
     async def test_no_progress_bar_when_disabled(
@@ -541,7 +541,7 @@ class TestConvenienceFunctions:
 
         assert len(results) == 2
         for result in results:
-            assert result.has_error is False
+            assert result.success is True
 
     @pytest.mark.asyncio
     async def test_verbose_mode_prints_traceback(
@@ -569,7 +569,7 @@ class TestConvenienceFunctions:
 
         # Check that the request failed as expected
         assert len(results) == 1
-        assert results[0].has_error is True
+        assert results[0].success is False
         assert results[0].error_message is not None
         
         # Check that traceback was printed to stdout and stderr
@@ -603,7 +603,7 @@ class TestConvenienceFunctions:
 
         # Check that the request failed as expected
         assert len(results) == 1
-        assert results[0].has_error is True
+        assert results[0].success is False
         assert results[0].error_message is not None
         
         # Check that traceback was printed to stdout and stderr
@@ -638,7 +638,7 @@ class TestConvenienceFunctions:
 
         # Check that the request failed as expected
         assert len(results) == 1
-        assert results[0].has_error is True
+        assert results[0].success is False
         assert results[0].error_message is not None
         
         # Check that NO traceback was printed to stdout or stderr
@@ -674,7 +674,7 @@ class TestConvenienceFunctions:
 
         # Check that the request failed as expected
         assert len(results) == 1
-        assert results[0].has_error is True
+        assert results[0].success is False
         assert results[0].error_message is not None
         
         # Check that user-friendly timeout messaging was printed

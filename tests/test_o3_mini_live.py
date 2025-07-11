@@ -43,7 +43,7 @@ class TestO3MiniTemperature:
             )
             
             # Should not have error after we implement the fix
-            assert not response.has_error
+            assert response.success
             assert response.choices
             # Check that we got a response (content might be empty due to finish_reason='length')
             assert len(response.choices) > 0
@@ -66,7 +66,7 @@ class TestO3MiniTemperature:
                 # No temperature specified - should default to 1 for reasoning models
             )
             
-            assert not response.has_error
+            assert response.success
             assert response.choices
             assert len(response.choices) > 0
             assert response.choices[0].message.role == MessageRole.ASSISTANT
@@ -88,7 +88,7 @@ class TestO3MiniTemperature:
                 temperature=1.0  # Should work fine for reasoning models
             )
             
-            assert not response.has_error
+            assert response.success
             assert response.choices
             assert len(response.choices) > 0
             assert response.choices[0].message.role == MessageRole.ASSISTANT
@@ -111,7 +111,7 @@ class TestO3MiniTemperature:
             )
             
             # Should still work but with warning
-            assert not response.has_error
+            assert response.success
             assert response.choices
             assert len(response.choices) > 0
             assert response.choices[0].message.role == MessageRole.ASSISTANT
@@ -137,7 +137,7 @@ class TestO3MiniTemperature:
                 temperature=1e-19  # Should work fine for non-reasoning models
             )
             
-            assert not response.has_error
+            assert response.success
             assert response.choices
             assert len(response.choices) > 0
             assert response.choices[0].message.role == MessageRole.ASSISTANT

@@ -116,7 +116,7 @@ class TestOpenAIAdapter:
         assert parsed.usage.prompt_tokens == 10
         assert parsed.usage.total_tokens == 15
         assert parsed.created == 1234567890
-        assert parsed.has_error == False
+        assert parsed.success == True
         assert parsed.error_message is None
 
     def test_parse_response_no_usage(self):
@@ -164,7 +164,7 @@ class TestOpenAIAdapter:
 
         parsed = adapter.parse_response(response_data, request)
 
-        assert parsed.has_error == True
+        assert parsed.success == False
         assert parsed.error_message == "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead."
         assert parsed.model == "gpt-4o"  # Falls back to request model
         assert len(parsed.choices) == 0  # No choices in error response
@@ -341,7 +341,7 @@ class TestAnthropicAdapter:
         assert parsed.usage.prompt_tokens == 10
         assert parsed.usage.completion_tokens == 5
         assert parsed.usage.total_tokens == 15
-        assert parsed.has_error == False
+        assert parsed.success == True
         assert parsed.error_message is None
 
     def test_parse_response_multiple_content_blocks(self):
@@ -387,7 +387,7 @@ class TestAnthropicAdapter:
 
         parsed = adapter.parse_response(response_data, request)
 
-        assert parsed.has_error == True
+        assert parsed.success == False
         assert parsed.error_message == "Invalid parameter: temperature must be between 0 and 1"
         assert parsed.model == "claude-3-sonnet-20240229"  # Falls back to request model
         assert len(parsed.choices) == 1  # Anthropic still creates a choice with empty content
@@ -461,7 +461,7 @@ class TestOpenRouterAdapter:
         assert parsed.provider == "openrouter"
         assert parsed.id == "chatcmpl-123"
         assert parsed.choices[0].message.content == "Hello there!"
-        assert parsed.has_error == False
+        assert parsed.success == True
         assert parsed.error_message is None
 
     def test_parse_response_with_error(self):
@@ -482,7 +482,7 @@ class TestOpenRouterAdapter:
 
         parsed = adapter.parse_response(response_data, request)
 
-        assert parsed.has_error == True
+        assert parsed.success == False
         assert parsed.error_message == "Model not found"
         assert parsed.model == "openai/gpt-4o"  # Falls back to request model
         assert len(parsed.choices) == 0  # No choices in error response

@@ -115,11 +115,11 @@ class OpenAIAdapter(ProviderAdapter):
     ) -> ChatCompletionResponse:
         """Parse OpenAI response."""
         # Check for errors first
-        has_error = False
+        success = True
         error_message = None
         
         if "error" in response_data:
-            has_error = True
+            success = False
             error_data = response_data["error"]
             error_message = error_data.get("message", "Unknown error")
 
@@ -153,7 +153,7 @@ class OpenAIAdapter(ProviderAdapter):
             choices=choices,
             usage=usage,
             created=response_data.get("created"),
-            has_error=has_error,
+            success=success,
             error_message=error_message,
             provider="openai",
             raw_response=response_data
@@ -216,11 +216,11 @@ class AnthropicAdapter(ProviderAdapter):
     ) -> ChatCompletionResponse:
         """Parse Anthropic response."""
         # Check for errors first
-        has_error = False
+        success = True
         error_message = None
         
         if "error" in response_data:
-            has_error = True
+            success = False
             error_data = response_data["error"]
             error_message = error_data.get("message", "Unknown error")
 
@@ -260,7 +260,7 @@ class AnthropicAdapter(ProviderAdapter):
             choices=[choice],
             usage=usage,
             created=int(time.time()),  # Anthropic doesn't provide created timestamp
-            has_error=has_error,
+            success=success,
             error_message=error_message,
             provider="anthropic",
             raw_response=response_data
@@ -316,11 +316,11 @@ class OpenRouterAdapter(ProviderAdapter):
     ) -> ChatCompletionResponse:
         """Parse OpenRouter response (similar to OpenAI)."""
         # Check for errors first
-        has_error = False
+        success = True
         error_message = None
         
         if "error" in response_data:
-            has_error = True
+            success = False
             error_data = response_data["error"]
             error_message = error_data.get("message", "Unknown error")
 
@@ -354,7 +354,7 @@ class OpenRouterAdapter(ProviderAdapter):
             choices=choices,
             usage=usage,
             created=response_data.get("created"),
-            has_error=has_error,
+            success=success,
             error_message=error_message,
             provider="openrouter",
             raw_response=response_data

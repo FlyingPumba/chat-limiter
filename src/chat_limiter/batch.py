@@ -101,7 +101,7 @@ class BatchResult(Generic[BatchResultT]):
     attempt_count: int = 0
 
     # Error information
-    has_error: bool = False
+    success: bool = True
     error_message: str | None = None
 
     # Response metadata
@@ -216,7 +216,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                     # Create error result
                     error_result: BatchResult[BatchResultT] = BatchResult(
                         item=group_items[i],
-                        has_error=True,
+                        success=False,
                         error_message=str(result),
                         attempt_count=group_items[i].attempt_count,
                     )
@@ -285,7 +285,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                     except Exception as e:
                         error_result: BatchResult[BatchResultT] = BatchResult(
                             item=item,
-                            has_error=True,
+                            success=False,
                             error_message=str(e),
                             attempt_count=item.attempt_count,
                         )
@@ -351,7 +351,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                     return BatchResult(
                         item=item,
                         result=result,
-                        has_error=False,
+                        success=True,
                         duration=time.time() - start_time,
                         attempt_count=item.attempt_count,
                     )
@@ -396,7 +396,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                             
                         return BatchResult(
                             item=item,
-                            has_error=True,
+                            success=False,
                             error_message=str(e),
                             duration=time.time() - start_time,
                             attempt_count=item.attempt_count,
@@ -414,7 +414,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
         # This should never be reached, but added for type checking
         return BatchResult(
             item=item,
-            has_error=True,
+            success=False,
             error_message="Unexpected error in retry logic",
             duration=time.time() - start_time,
             attempt_count=item.attempt_count,
@@ -445,7 +445,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                 return BatchResult(
                     item=item,
                     result=result,
-                    has_error=False,
+                    success=True,
                     duration=time.time() - start_time,
                     attempt_count=item.attempt_count,
                 )
@@ -469,7 +469,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                         
                     return BatchResult(
                         item=item,
-                        has_error=True,
+                        success=False,
                         error_message=str(e),
                         duration=time.time() - start_time,
                         attempt_count=item.attempt_count,
@@ -481,7 +481,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
         # This should never be reached, but added for type checking
         return BatchResult(
             item=item,
-            has_error=True,
+            success=False,
             error_message="Unexpected error in retry logic",
             duration=time.time() - start_time,
             attempt_count=item.attempt_count,
@@ -492,16 +492,16 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
         if not self._results:
             return 0.0
 
-        successful = sum(1 for r in self._results if not r.has_error)
+        successful = sum(1 for r in self._results if r.success)
         return successful / len(self._results)
 
     def get_successful_results(self) -> list[BatchResult[BatchResultT]]:
         """Get only successful results."""
-        return [r for r in self._results if not r.has_error]
+        return [r for r in self._results if r.success]
 
     def get_failed_results(self) -> list[BatchResult[BatchResultT]]:
         """Get only failed results."""
-        return [r for r in self._results if r.has_error]
+        return [r for r in self._results if not r.success]
 
     def get_stats(self) -> dict[str, Any]:
         """Get comprehensive processing statistics."""
@@ -698,7 +698,7 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
         )
 
         # Check for errors in the response
-        if response.has_error:
+        if not response.success:
             raise Exception(f"Chat completion failed: {response.error_message}")
 
         # Log response if verbose mode is enabled
@@ -740,7 +740,7 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
         )
 
         # Check for errors in the response
-        if response.has_error:
+        if not response.success:
             raise Exception(f"Chat completion failed: {response.error_message}")
 
         # Log response if verbose mode is enabled
