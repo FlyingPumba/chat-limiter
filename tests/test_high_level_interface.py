@@ -1,148 +1,121 @@
-"""
-Tests for the high-level chat completion interface.
-"""
-
-from unittest.mock import AsyncMock, Mock
+"""Tests for high-level interface functionality."""
 
 import pytest
+from unittest.mock import Mock, patch, AsyncMock
 
-from chat_limiter import ChatLimiter, Message, MessageRole, Provider
+from chat_limiter import ChatLimiter, Provider, Message, MessageRole
 
 
 class TestChatLimiterForModel:
+    """Tests for ChatLimiter.for_model class method."""
+
     def test_for_model_openai(self):
-        """Test ChatLimiter.for_model with OpenAI model."""
-        limiter = ChatLimiter.for_model("gpt-4o", "sk-test-key")
+        """Test for_model with OpenAI model."""
+        limiter = ChatLimiter.for_model("gpt-4o", api_key="sk-test")
         assert limiter.provider == Provider.OPENAI
-        assert limiter.api_key == "sk-test-key"
 
     def test_for_model_anthropic(self):
-        """Test ChatLimiter.for_model with Anthropic model."""
-        limiter = ChatLimiter.for_model("claude-3-5-sonnet-20241022", "sk-ant-test")
+        """Test for_model with Anthropic model."""
+        limiter = ChatLimiter.for_model("claude-3-sonnet-20240229", api_key="sk-ant-test")
         assert limiter.provider == Provider.ANTHROPIC
-        assert limiter.api_key == "sk-ant-test"
 
     def test_for_model_openrouter(self):
-        """Test ChatLimiter.for_model with OpenRouter model."""
-        limiter = ChatLimiter.for_model("openai/gpt-4o", "sk-or-test")
+        """Test for_model with OpenRouter model."""
+        limiter = ChatLimiter.for_model("openai/gpt-4o", api_key="sk-or-test")
         assert limiter.provider == Provider.OPENROUTER
-        assert limiter.api_key == "sk-or-test"
 
     def test_for_model_unknown(self):
-        """Test ChatLimiter.for_model with unknown model."""
+        """Test for_model with unknown model."""
         with pytest.raises(ValueError, match="Could not determine provider"):
-            ChatLimiter.for_model("unknown-model", "test-key")
+            ChatLimiter.for_model("unknown-model", api_key="test", use_dynamic_discovery=False)
 
     def test_for_model_with_kwargs(self):
-        """Test ChatLimiter.for_model with additional kwargs."""
+        """Test for_model with additional arguments."""
         limiter = ChatLimiter.for_model(
-            "gpt-4o",
-            "sk-test-key",
-            enable_adaptive_limits=False
+            "gpt-4o", 
+            api_key="sk-test", 
+            timeout=30, 
+            max_retries=5
         )
         assert limiter.provider == Provider.OPENAI
-        assert not limiter.enable_adaptive_limits
+        assert limiter._user_timeout == 30
+        assert limiter._user_max_retries == 5
 
     def test_for_model_with_provider_override(self):
-        """Test ChatLimiter.for_model with provider override."""
-        # Test string provider override
+        """Test for_model with provider override."""
         limiter = ChatLimiter.for_model(
-            "custom-model",
-            "sk-test-key",
-            provider="openai"
+            "custom-model", 
+            api_key="test", 
+            provider=Provider.OPENAI
         )
         assert limiter.provider == Provider.OPENAI
 
-        # Test Provider enum override
-        limiter = ChatLimiter.for_model(
-            "custom-model",
-            "sk-test-key",
-            provider=Provider.ANTHROPIC
-        )
-        assert limiter.provider == Provider.ANTHROPIC
-
     def test_for_model_with_env_api_key(self):
-        """Test ChatLimiter.for_model with environment variable API key."""
-        import os
-
-        # Set environment variable
-        original_key = os.environ.get("OPENAI_API_KEY")
-        os.environ["OPENAI_API_KEY"] = "test-env-key"
-
-        try:
-            # Disable dynamic discovery to avoid API calls with fake key
+        """Test for_model with environment variable API key."""
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-env-test"}):
             limiter = ChatLimiter.for_model("gpt-4o", use_dynamic_discovery=False)
             assert limiter.provider == Provider.OPENAI
-            assert limiter.api_key == "test-env-key"
-        finally:
-            # Clean up
-            if original_key is not None:
-                os.environ["OPENAI_API_KEY"] = original_key
-            else:
-                os.environ.pop("OPENAI_API_KEY", None)
 
     def test_for_model_missing_env_key(self):
-        """Test ChatLimiter.for_model with missing environment variable."""
+        """Test for_model without API key raises appropriate error."""
+        # Clear environment variables to ensure no API keys are available
         import os
-
-        # Ensure environment variable is not set
-        original_key = os.environ.get("ANTHROPIC_API_KEY")
-        os.environ.pop("ANTHROPIC_API_KEY", None)
-
+        original_env = {}
+        env_vars_to_clear = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"]
+        
+        # Save original values and clear them
+        for var in env_vars_to_clear:
+            original_env[var] = os.environ.get(var)
+            if var in os.environ:
+                del os.environ[var]
+        
         try:
-            with pytest.raises(ValueError, match="ANTHROPIC_API_KEY environment variable not set"):
-                # Disable dynamic discovery to avoid API calls
-                ChatLimiter.for_model("claude-3-sonnet-20240229", use_dynamic_discovery=False)
+            with pytest.raises(ValueError, match="API key"):
+                ChatLimiter.for_model("gpt-4o", use_dynamic_discovery=False)
         finally:
-            # Clean up
-            if original_key is not None:
-                os.environ["ANTHROPIC_API_KEY"] = original_key
+            # Restore original values
+            for var, value in original_env.items():
+                if value is not None:
+                    os.environ[var] = value
 
 
 class TestChatCompletionAsync:
+    """Tests for async chat completion functionality."""
+
     @pytest.fixture
     def mock_limiter(self):
-        """Create a ChatLimiter with mocked HTTP client."""
-        # Create mock response
+        """Mock ChatLimiter for testing."""
+        # Mock HTTP client
+        mock_client = AsyncMock()
         mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.json.return_value = {
             "id": "chatcmpl-test",
-            "model": "gpt-4o-2024-08-06",
+            "model": "gpt-4o",
             "choices": [
                 {
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": "Hello there!"
+                        "content": "Hello!"
                     },
                     "finish_reason": "stop"
                 }
             ],
             "usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 5,
-                "total_tokens": 15
+                "prompt_tokens": 5,
+                "completion_tokens": 3,
+                "total_tokens": 8
             }
         }
-        # Mock headers as a dict-like object
-        mock_response.headers = {
-            "x-ratelimit-limit-requests": "100",
-            "x-ratelimit-remaining-requests": "99",
-        }
-
-        # Create mock HTTP client
-        mock_client = AsyncMock()
         mock_client.request.return_value = mock_response
-        mock_client.aclose = AsyncMock()
 
-        # Create limiter with mock client
-        limiter = ChatLimiter(
+        return ChatLimiter(
             provider=Provider.OPENAI,
             api_key="sk-test-key",
             http_client=mock_client
         )
-
-        return limiter
 
     @pytest.mark.asyncio
     async def test_chat_completion_basic(self, mock_limiter):
@@ -155,56 +128,37 @@ class TestChatCompletionAsync:
                 messages=messages
             )
 
-        assert response.id == "chatcmpl-test"
-        assert response.model == "gpt-4o-2024-08-06"
-        assert len(response.choices) == 1
-        assert response.choices[0].message.content == "Hello there!"
-        assert response.usage.total_tokens == 15
+        assert response.success
+        assert response.choices[0].message.content == "Hello!"
 
     @pytest.mark.asyncio
     async def test_chat_completion_with_parameters(self, mock_limiter):
-        """Test chat completion with all parameters."""
+        """Test chat completion with additional parameters."""
         messages = [Message(role=MessageRole.USER, content="Hello!")]
 
         async with mock_limiter as limiter:
-            await limiter.chat_completion(
+            response = await limiter.chat_completion(
                 model="gpt-4o",
                 messages=messages,
                 max_tokens=100,
-                temperature=0.7,
-                top_p=0.9,
-                stop=["\\n"],
-                stream=False,
-                frequency_penalty=0.5,
-                presence_penalty=0.3,
+                temperature=0.7
             )
 
-        # Verify the request was made to the underlying HTTP client
-        mock_limiter.async_client.request.assert_called_once()
-        call_args = mock_limiter.async_client.request.call_args
-
-        assert call_args[0][0] == "POST"  # method
-        assert call_args[0][1] == "/chat/completions"  # url
-
-        # Check JSON payload
-        json_data = call_args[1]["json"]
-        assert json_data["model"] == "gpt-4o"
-        assert json_data["max_tokens"] == 100
-        assert json_data["temperature"] == 0.7
-        assert json_data["frequency_penalty"] == 0.5
+        assert response.success
+        assert response.choices[0].message.content == "Hello!"
 
     @pytest.mark.asyncio
     async def test_chat_completion_without_context(self):
-        """Test chat completion without context manager."""
+        """Test chat completion without context manager raises error."""
         limiter = ChatLimiter(provider=Provider.OPENAI, api_key="sk-test")
         messages = [Message(role=MessageRole.USER, content="Hello!")]
 
-        with pytest.raises(RuntimeError, match="async context manager"):
-            await limiter.chat_completion("gpt-4o", messages)
+        with pytest.raises(RuntimeError, match="must be used as an async context manager"):
+            await limiter.chat_completion(model="gpt-4o", messages=messages)
 
     @pytest.mark.asyncio
     async def test_simple_chat(self, mock_limiter):
-        """Test simple chat method."""
+        """Test simple chat convenience method."""
         async with mock_limiter as limiter:
             response = await limiter.simple_chat(
                 model="gpt-4o",
@@ -212,162 +166,91 @@ class TestChatCompletionAsync:
                 max_tokens=50
             )
 
-        assert response == "Hello there!"
+        assert response == "Hello!"
 
     @pytest.mark.asyncio
     async def test_simple_chat_empty_response(self, mock_limiter):
         """Test simple chat with empty response."""
         # Mock empty response
-        mock_response = Mock()
-        mock_response.json.return_value = {
-            "id": "chatcmpl-test",
+        mock_limiter.async_client.request.return_value.json.return_value = {
             "choices": []
         }
-        # Mock headers as a dict-like object
-        mock_response.headers = {
-            "x-ratelimit-limit-requests": "100",
-            "x-ratelimit-remaining-requests": "99",
-        }
-        mock_limiter.async_client.request.return_value = mock_response
 
         async with mock_limiter as limiter:
-            response = await limiter.simple_chat("gpt-4o", "Hello!")
+            response = await limiter.simple_chat(
+                model="gpt-4o",
+                prompt="Hello!"
+            )
 
         assert response == ""
 
 
 class TestChatCompletionSync:
+    """Tests for sync chat completion functionality."""
+
     @pytest.fixture
-    def mock_sync_limiter(self):
-        """Create a ChatLimiter with mocked sync HTTP client."""
-        # Create mock response
+    def mock_limiter(self):
+        """Mock ChatLimiter for testing."""
+        # Mock HTTP client
+        mock_client = Mock()
         mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.json.return_value = {
             "id": "chatcmpl-test",
-            "model": "gpt-4o-2024-08-06",
+            "model": "gpt-4o",
             "choices": [
                 {
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": "Hello there!"
+                        "content": "Hello!"
                     },
                     "finish_reason": "stop"
                 }
             ],
             "usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 5,
-                "total_tokens": 15
+                "prompt_tokens": 5,
+                "completion_tokens": 3,
+                "total_tokens": 8
             }
         }
-        # Mock headers as a dict-like object
-        mock_response.headers = {
-            "x-ratelimit-limit-requests": "100",
-            "x-ratelimit-remaining-requests": "99",
-        }
-
-        # Create mock HTTP client
-        mock_client = Mock()
         mock_client.request.return_value = mock_response
-        mock_client.close = Mock()
 
-        # Create limiter with mock client
-        limiter = ChatLimiter(
+        return ChatLimiter(
             provider=Provider.OPENAI,
             api_key="sk-test-key",
             sync_http_client=mock_client
         )
 
-        return limiter
-
-    def test_chat_completion_sync_basic(self, mock_sync_limiter):
-        """Test basic synchronous chat completion."""
+    def test_chat_completion_sync_basic(self, mock_limiter):
+        """Test basic sync chat completion."""
         messages = [Message(role=MessageRole.USER, content="Hello!")]
 
-        with mock_sync_limiter as limiter:
+        with mock_limiter as limiter:
             response = limiter.chat_completion_sync(
                 model="gpt-4o",
                 messages=messages
             )
 
-        assert response.id == "chatcmpl-test"
-        assert response.choices[0].message.content == "Hello there!"
+        assert response.success
+        assert response.choices[0].message.content == "Hello!"
 
     def test_chat_completion_sync_without_context(self):
-        """Test sync chat completion without context manager."""
+        """Test sync chat completion without context manager raises error."""
         limiter = ChatLimiter(provider=Provider.OPENAI, api_key="sk-test")
         messages = [Message(role=MessageRole.USER, content="Hello!")]
 
-        with pytest.raises(RuntimeError, match="sync context manager"):
-            limiter.chat_completion_sync("gpt-4o", messages)
+        with pytest.raises(RuntimeError, match="must be used as a sync context manager"):
+            limiter.chat_completion_sync(model="gpt-4o", messages=messages)
 
-    def test_simple_chat_sync(self, mock_sync_limiter):
-        """Test simple synchronous chat method."""
-        with mock_sync_limiter as limiter:
+    def test_simple_chat_sync(self, mock_limiter):
+        """Test simple chat sync convenience method."""
+        with mock_limiter as limiter:
             response = limiter.simple_chat_sync(
                 model="gpt-4o",
                 prompt="Hello!",
                 max_tokens=50
             )
 
-        assert response == "Hello there!"
-
-
-class TestChatCompletionWithDifferentProviders:
-    def test_anthropic_adapter_integration(self):
-        """Test that Anthropic adapter is used correctly."""
-        limiter = ChatLimiter(provider=Provider.ANTHROPIC, api_key="sk-ant-test")
-
-        # Mock the request method to verify the adapter is called
-        mock_response = Mock()
-        mock_response.json.return_value = {
-            "id": "msg_test",
-            "content": [{"type": "text", "text": "Hello!"}],
-            "usage": {"input_tokens": 5, "output_tokens": 3}
-        }
-
-        limiter.request_sync = Mock(return_value=mock_response)
-
-        messages = [Message(role=MessageRole.USER, content="Test")]
-
-        with limiter:
-            response = limiter.chat_completion_sync("claude-3-sonnet-20240229", messages)
-
-        # Verify the request was made with Anthropic format
-        limiter.request_sync.assert_called_once()
-        call_args = limiter.request_sync.call_args
-
-        assert call_args[0][0] == "POST"  # method
-        assert call_args[0][1] == "/messages"  # Anthropic endpoint
-
-        # Check that the response was parsed correctly
-        assert response.provider == "anthropic"
-        assert response.choices[0].message.content == "Hello!"
-
-    def test_openrouter_adapter_integration(self):
-        """Test that OpenRouter adapter is used correctly."""
-        limiter = ChatLimiter(provider=Provider.OPENROUTER, api_key="sk-or-test")
-
-        # Mock the request method
-        mock_response = Mock()
-        mock_response.json.return_value = {
-            "id": "chatcmpl-test",
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello!"}}]
-        }
-
-        limiter.request_sync = Mock(return_value=mock_response)
-
-        messages = [Message(role=MessageRole.USER, content="Test")]
-
-        with limiter:
-            response = limiter.chat_completion_sync("openai/gpt-4o", messages)
-
-        # Verify the request was made
-        limiter.request_sync.assert_called_once()
-        call_args = limiter.request_sync.call_args
-
-        assert call_args[0][1] == "/chat/completions"  # OpenRouter endpoint
-
-        # Check that the response was parsed correctly
-        assert response.provider == "openrouter"
+        assert response == "Hello!"

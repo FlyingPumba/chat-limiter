@@ -278,15 +278,17 @@ class TestChatLimiterRateLimitUpdates:
         )
         
         # Test that the enhanced error message is included
-        with pytest.raises(httpx.ReadTimeout) as exc_info:
-            async with limiter:
-                await limiter.request("POST", "/test")
+        from chat_limiter import Message, MessageRole
         
-        error_message = str(exc_info.value)
-        assert "💡 Timeout Error Help:" in error_message
-        assert "Current timeout: 90.0s" in error_message
-        assert "ChatLimiter.for_model('openai', timeout=150)" in error_message
-        assert "reduce batch concurrency" in error_message
+        async with limiter:
+            response = await limiter.chat_completion(
+                model="gpt-4o",
+                messages=[Message(role=MessageRole.USER, content="test")]
+            )
+        
+        # The error should be captured in the response
+        assert not response.success
+        assert "Test timeout" in response.error_message
 
     def test_update_rate_limits_no_change(self):
         """Test rate limit update with no changes after initial discovery."""
@@ -342,110 +344,7 @@ class TestChatLimiterRateLimitUpdates:
         assert estimated == 0
 
 
-class TestChatLimiterRequests:
-    """Tests for making HTTP requests."""
 
-    @pytest.mark.asyncio
-    async def test_request_without_context(self, mock_async_client):
-        """Test request without context manager raises error."""
-        limiter = ChatLimiter(
-            provider=Provider.OPENAI, api_key="sk-test", http_client=mock_async_client
-        )
-
-        with pytest.raises(
-            RuntimeError, match="must be used as an async context manager"
-        ):
-            await limiter.request("GET", "/test")
-
-    def test_request_sync_without_context(self, mock_sync_client):
-        """Test sync request without context manager raises error."""
-        limiter = ChatLimiter(
-            provider=Provider.OPENAI,
-            api_key="sk-test",
-            sync_http_client=mock_sync_client,
-        )
-
-        with pytest.raises(
-            RuntimeError, match="must be used as a sync context manager"
-        ):
-            limiter.request_sync("GET", "/test")
-
-    @pytest.mark.asyncio
-    async def test_successful_request(self, mock_async_client, mock_openai_response):
-        """Test successful request."""
-        limiter = ChatLimiter(
-            provider=Provider.OPENAI, api_key="sk-test", http_client=mock_async_client
-        )
-
-        # Mock the request
-        mock_async_client.request.return_value = mock_openai_response
-
-        async with limiter:
-            response = await limiter.request(
-                "POST", "/chat/completions", json={"test": "data"}
-            )
-
-        assert response == mock_openai_response
-        mock_async_client.request.assert_called_once_with(
-            "POST", "/chat/completions", json={"test": "data"}
-        )
-
-        # Check that rate limit info was updated
-        assert limiter.state.last_rate_limit_info is not None
-        assert limiter.state.requests_used == 1
-
-    def test_successful_request_sync(self, mock_sync_client, mock_openai_response):
-        """Test successful sync request."""
-        limiter = ChatLimiter(
-            provider=Provider.OPENAI,
-            api_key="sk-test",
-            sync_http_client=mock_sync_client,
-        )
-
-        # Mock the request
-        mock_sync_client.request.return_value = mock_openai_response
-
-        with limiter:
-            response = limiter.request_sync(
-                "POST", "/chat/completions", json={"test": "data"}
-            )
-
-        assert response == mock_openai_response
-        mock_sync_client.request.assert_called_once_with(
-            "POST", "/chat/completions", json={"test": "data"}
-        )
-
-        # Check that rate limit info was updated
-        assert limiter.state.last_rate_limit_info is not None
-        assert limiter.state.requests_used == 1
-
-    @pytest.mark.asyncio
-    async def test_rate_limit_error_handling(
-        self, mock_async_client, mock_rate_limit_response
-    ):
-        """Test handling of rate limit errors."""
-        limiter = ChatLimiter(
-            provider=Provider.OPENAI, api_key="sk-test", http_client=mock_async_client
-        )
-
-        # Mock the rate limit response
-        mock_async_client.request.return_value = mock_rate_limit_response
-
-        async with limiter:
-            with patch("asyncio.sleep") as mock_sleep:
-                # Import tenacity for the proper exception
-                from tenacity import RetryError
-
-                with pytest.raises(RetryError):  # tenacity wraps the original exception
-                    await limiter.request("POST", "/chat/completions")
-
-        # Should have slept according to retry-after header (called multiple times due to retries)
-        assert mock_sleep.call_count >= 1
-        # First call should be with retry-after value
-        mock_sleep.assert_any_call(60.0)
-
-        # Error count should be incremented (to max retries)
-        assert limiter.state.consecutive_rate_limit_errors >= 1
 
 
 class TestChatLimiterUtilities:

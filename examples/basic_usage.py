@@ -13,8 +13,9 @@ from chat_limiter import (
     ChatLimiter,
     Provider,
     BatchConfig,
-    process_chat_batch,
-    process_chat_batch_sync,
+    process_chat_completion_batch,
+    process_chat_completion_batch_sync,
+    create_chat_completion_requests,
 )
 
 
@@ -29,20 +30,21 @@ async def basic_openai_example():
         return
     
     async with ChatLimiter(provider=Provider.OPENAI, api_key=api_key) as limiter:
-        response = await limiter.request(
-            "POST", "/chat/completions",
-            json={
-                "model": "gpt-3.5-turbo",
-                "messages": [
-                    {"role": "user", "content": "What is the capital of France?"}
-                ],
-                "max_tokens": 50
-            }
+        from chat_limiter import Message, MessageRole
+        
+        response = await limiter.chat_completion(
+            model="gpt-3.5-turbo",
+            messages=[
+                Message(role=MessageRole.USER, content="What is the capital of France?")
+            ],
+            max_tokens=50
         )
         
-        result = response.json()
-        answer = result["choices"][0]["message"]["content"]
-        print(f"✅ Response: {answer}")
+        if response.success and response.choices:
+            answer = response.choices[0].message.content
+            print(f"✅ Response: {answer}")
+        else:
+            print(f"❌ Error: {response.error_message}")
         
         # Check rate limit status
         limits = limiter.get_current_limits()
@@ -61,20 +63,21 @@ def sync_anthropic_example():
         return
     
     with ChatLimiter(provider=Provider.ANTHROPIC, api_key=api_key) as limiter:
-        response = limiter.request_sync(
-            "POST", "/messages",
-            json={
-                "model": "claude-3-haiku-20240307",
-                "max_tokens": 50,
-                "messages": [
-                    {"role": "user", "content": "What is Python?"}
-                ]
-            }
+        from chat_limiter import Message, MessageRole
+        
+        response = limiter.chat_completion_sync(
+            model="claude-3-haiku-20240307",
+            messages=[
+                Message(role=MessageRole.USER, content="What is Python?")
+            ],
+            max_tokens=50
         )
         
-        result = response.json()
-        answer = result["content"][0]["text"]
-        print(f"✅ Response: {answer}")
+        if response.success and response.choices:
+            answer = response.choices[0].message.content
+            print(f"✅ Response: {answer}")
+        else:
+            print(f"❌ Error: {response.error_message}")
         
         # Check rate limit status
         limits = limiter.get_current_limits()
@@ -100,14 +103,11 @@ async def batch_processing_example():
         "What is artificial intelligence?"
     ]
     
-    requests = [
-        {
-            "model": "gpt-3.5-turbo",
-            "messages": [{"role": "user", "content": question}],
-            "max_tokens": 100
-        }
-        for question in questions
-    ]
+    requests = create_chat_completion_requests(
+        model="gpt-3.5-turbo",
+        prompts=questions,
+        max_tokens=100
+    )
     
     # Configure batch processing
     config = BatchConfig(
@@ -119,7 +119,7 @@ async def batch_processing_example():
     async with ChatLimiter(provider=Provider.OPENAI, api_key=api_key) as limiter:
         print(f"🚀 Processing {len(requests)} requests...")
         
-        results = await process_chat_batch(limiter, requests, config)
+        results = await process_chat_completion_batch(limiter, requests, config)
         
         # Analyze results
         successful = [r for r in results if r.success]
@@ -131,8 +131,8 @@ async def batch_processing_example():
         # Show first successful result
         if successful:
             first_result = successful[0].result
-            if first_result:
-                answer = first_result["choices"][0]["message"]["content"]
+            if first_result and first_result.choices:
+                answer = first_result.choices[0].message.content
                 print(f"📝 First answer: {answer[:100]}...")
         
         # Show processing statistics
@@ -151,13 +151,17 @@ async def error_handling_example():
     
     try:
         async with ChatLimiter(provider=Provider.OPENAI, api_key=invalid_key) as limiter:
-            response = await limiter.request(
-                "POST", "/chat/completions",
-                json={
-                    "model": "gpt-3.5-turbo",
-                    "messages": [{"role": "user", "content": "Test"}]
-                }
+            from chat_limiter import Message, MessageRole
+            
+            response = await limiter.chat_completion(
+                model="gpt-3.5-turbo",
+                messages=[
+                    Message(role=MessageRole.USER, content="Test")
+                ]
             )
+            
+            if not response.success:
+                print(f"✅ Request failed as expected: {response.error_message}")
     except Exception as e:
         print(f"✅ Caught expected error: {type(e).__name__}")
         print(f"📝 Error message: {str(e)[:100]}...")
@@ -207,17 +211,14 @@ def sync_batch_example():
         print("❌ OPENAI_API_KEY environment variable not set")
         return
     
-    requests = [
-        {
-            "model": "gpt-3.5-turbo",
-            "messages": [{"role": "user", "content": f"Count to {i}"}],
-            "max_tokens": 50
-        }
-        for i in range(1, 4)  # Smaller batch for demo
-    ]
+    requests = create_chat_completion_requests(
+        model="gpt-3.5-turbo",
+        prompts=[f"Count to {i}" for i in range(1, 4)],
+        max_tokens=50
+    )
     
     with ChatLimiter(provider=Provider.OPENAI, api_key=api_key) as limiter:
-        results = process_chat_batch_sync(limiter, requests)
+        results = process_chat_completion_batch_sync(limiter, requests)
         
         successful = [r for r in results if r.success]
         print(f"✅ Processed {len(successful)} requests synchronously")

@@ -737,217 +737,6 @@ class ChatLimiter:
             ),
         )
 
-    async def request(
-        self,
-        method: str,
-        url: str,
-        *,
-        json: dict[str, Any] | None = None,
-        **kwargs: Any,
-    ) -> httpx.Response:
-        """Wrapper that applies retry decorator dynamically."""
-        try:
-            return await self._get_retry_decorator()(self._request_impl)(
-                method, url, json=json, **kwargs
-            )
-        except Exception as e:
-            # Check if this is a retry error wrapping a timeout
-            if (
-                hasattr(e, "last_attempt")
-                and e.last_attempt
-                and e.last_attempt.exception()
-            ):
-                original_exception = e.last_attempt.exception()
-                if isinstance(
-                    original_exception, (httpx.ReadTimeout, httpx.ConnectTimeout)
-                ):
-                    # Enhance timeout error with helpful information
-                    timeout_info = (
-                        f"\n💡 Timeout Error Help:\n"
-                        f"   Current timeout: {self._user_timeout}s\n"
-                        f"   To increase timeout, use: ChatLimiter.for_model('{self.provider.value}', timeout={int(self._user_timeout + 60)})\n"
-                        f"   Or reduce batch concurrency if processing multiple requests\n"
-                        f"   Retries attempted: {self._user_max_retries}\n"
-                    )
-                    raise type(original_exception)(
-                        str(original_exception) + timeout_info
-                    ) from e
-
-            # For direct timeout errors (shouldn't happen due to retry decorator but just in case)
-            if isinstance(e, (httpx.ReadTimeout, httpx.ConnectTimeout)):
-                timeout_info = (
-                    f"\n💡 Timeout Error Help:\n"
-                    f"   Current timeout: {self._user_timeout}s\n"
-                    f"   To increase timeout, use: ChatLimiter.for_model('{self.provider.value}', timeout={int(self._user_timeout + 60)})\n"
-                    f"   Or reduce batch concurrency if processing multiple requests\n"
-                )
-                raise type(e)(str(e) + timeout_info) from e
-
-            # Re-raise any other exceptions unchanged
-            raise
-
-    async def _request_impl(
-        self,
-        method: str,
-        url: str,
-        *,
-        json: dict[str, Any] | None = None,
-        **kwargs: Any,
-    ) -> httpx.Response:
-        """
-        Make an async HTTP request with rate limiting.
-
-        Args:
-            method: HTTP method (GET, POST, etc.)
-            url: URL or path for the request
-            json: JSON data to send
-            **kwargs: Additional arguments passed to httpx
-
-        Returns:
-            HTTP response
-
-        Raises:
-            httpx.HTTPStatusError: For HTTP error responses
-            httpx.RequestError: For request errors
-        """
-        if not self._async_context_active:
-            raise RuntimeError("ChatLimiter must be used as an async context manager")
-
-        # Estimate tokens if we have JSON data
-        estimated_tokens = self._estimate_tokens(json or {})
-
-        # Acquire rate limits
-        async with self._acquire_rate_limits(estimated_tokens):
-            # Make the request
-            response = await self.async_client.request(method, url, json=json, **kwargs)
-
-            # Extract rate limit info
-            rate_limit_info = extract_rate_limit_info(
-                dict(response.headers), self.config
-            )
-
-            # Update our rate limits
-            if self.enable_adaptive_limits:
-                self._update_rate_limits(rate_limit_info)
-
-            # Handle rate limit errors
-            if response.status_code == 429:
-                self.state.consecutive_rate_limit_errors += 1
-                if rate_limit_info.retry_after:
-                    await asyncio.sleep(rate_limit_info.retry_after)
-                else:
-                    # Exponential backoff
-                    backoff = self.config.base_backoff * (
-                        2**self.state.consecutive_rate_limit_errors
-                    )
-                    await asyncio.sleep(min(backoff, self.config.max_backoff))
-
-                response.raise_for_status()
-            else:
-                # Reset consecutive errors on success
-                self.state.consecutive_rate_limit_errors = 0
-
-            return response
-
-    def request_sync(
-        self,
-        method: str,
-        url: str,
-        *,
-        json: dict[str, Any] | None = None,
-        **kwargs: Any,
-    ) -> httpx.Response:
-        """Wrapper that applies retry decorator dynamically."""
-        # For sync, we need to use the sync version of retry
-        retry_decorator = retry(
-            stop=stop_after_attempt(self._user_max_retries),
-            wait=wait_exponential(multiplier=self._user_base_backoff, min=1, max=60),
-            retry=retry_if_exception_type(
-                (
-                    httpx.HTTPStatusError,
-                    httpx.RequestError,
-                    httpx.ReadTimeout,
-                    httpx.ConnectTimeout,
-                )
-            ),
-        )
-        try:
-            return retry_decorator(self._request_sync_impl)(
-                method, url, json=json, **kwargs
-            )
-        except (httpx.ReadTimeout, httpx.ConnectTimeout) as e:
-            # Enhance timeout error with helpful information
-            timeout_info = (
-                f"\n💡 Timeout Error Help:\n"
-                f"   Current timeout: {self._user_timeout}s\n"
-                f"   To increase timeout, use: ChatLimiter.for_model('{self.provider.value}', timeout={int(self._user_timeout + 60)})\n"
-                f"   Or reduce batch concurrency if processing multiple requests\n"
-            )
-            raise type(e)(str(e) + timeout_info) from e
-
-    def _request_sync_impl(
-        self,
-        method: str,
-        url: str,
-        *,
-        json: dict[str, Any] | None = None,
-        **kwargs: Any,
-    ) -> httpx.Response:
-        """
-        Make a sync HTTP request with rate limiting.
-
-        Args:
-            method: HTTP method (GET, POST, etc.)
-            url: URL or path for the request
-            json: JSON data to send
-            **kwargs: Additional arguments passed to httpx
-
-        Returns:
-            HTTP response
-
-        Raises:
-            httpx.HTTPStatusError: For HTTP error responses
-            httpx.RequestError: For request errors
-        """
-        if not self._sync_context_active:
-            raise RuntimeError("ChatLimiter must be used as a sync context manager")
-
-        # Estimate tokens if we have JSON data
-        estimated_tokens = self._estimate_tokens(json or {})
-
-        # Acquire rate limits
-        with self._acquire_rate_limits_sync(estimated_tokens):
-            # Make the request
-            response = self.sync_client.request(method, url, json=json, **kwargs)
-
-            # Extract rate limit info
-            rate_limit_info = extract_rate_limit_info(
-                dict(response.headers), self.config
-            )
-
-            # Update our rate limits
-            if self.enable_adaptive_limits:
-                self._update_rate_limits(rate_limit_info)
-
-            # Handle rate limit errors
-            if response.status_code == 429:
-                self.state.consecutive_rate_limit_errors += 1
-                if rate_limit_info.retry_after:
-                    time.sleep(rate_limit_info.retry_after)
-                else:
-                    # Exponential backoff
-                    backoff = self.config.base_backoff * (
-                        2**self.state.consecutive_rate_limit_errors
-                    )
-                    time.sleep(min(backoff, self.config.max_backoff))
-
-                response.raise_for_status()
-            else:
-                # Reset consecutive errors on success
-                self.state.consecutive_rate_limit_errors = 0
-
-            return response
-
     def get_current_limits(self) -> dict[str, Any]:
         """Get current rate limit information."""
         return {
@@ -1022,14 +811,63 @@ class ChatLimiter:
         # Format the request for the provider
         formatted_request = adapter.format_request(request)
 
-        # Make the HTTP request
-        response = await self.request(
-            "POST", adapter.get_endpoint(), json=formatted_request
-        )
-
-        # Parse the response
-        response_data = response.json()
-        return adapter.parse_response(response_data, request)
+        # Make the HTTP request with rate limiting
+        try:
+            # Estimate tokens
+            estimated_tokens = self._estimate_tokens(formatted_request)
+            
+            # Acquire rate limits
+            async with self._acquire_rate_limits(estimated_tokens):
+                # Make the request
+                response = await self.async_client.request(
+                    "POST", adapter.get_endpoint(), json=formatted_request
+                )
+                
+                # Extract rate limit info
+                from .providers import extract_rate_limit_info
+                rate_limit_info = extract_rate_limit_info(
+                    dict(response.headers), self.config
+                )
+                
+                # Update our rate limits
+                if self.enable_adaptive_limits:
+                    self._update_rate_limits(rate_limit_info)
+                
+                # Handle rate limit errors
+                if response.status_code == 429:
+                    self.state.consecutive_rate_limit_errors += 1
+                    if rate_limit_info.retry_after:
+                        import asyncio
+                        await asyncio.sleep(rate_limit_info.retry_after)
+                    else:
+                        # Exponential backoff
+                        import asyncio
+                        backoff = self.config.base_backoff * (
+                            2**self.state.consecutive_rate_limit_errors
+                        )
+                        await asyncio.sleep(min(backoff, self.config.max_backoff))
+                    
+                    response.raise_for_status()
+                else:
+                    # Reset consecutive errors on success
+                    self.state.consecutive_rate_limit_errors = 0
+                
+                # Parse the response
+                response_data = response.json()
+                return adapter.parse_response(response_data, request)
+                
+        except Exception as e:
+            # Handle errors and return error response
+            error_response = ChatCompletionResponse(
+                id="error",
+                model=request.model,
+                success=False,
+                error_message=str(e),
+                choices=[],
+                usage=None,
+                created=None,
+            )
+            return error_response
 
     def chat_completion_sync(
         self,
@@ -1084,14 +922,63 @@ class ChatLimiter:
         # Format the request for the provider
         formatted_request = adapter.format_request(request)
 
-        # Make the HTTP request
-        response = self.request_sync(
-            "POST", adapter.get_endpoint(), json=formatted_request
-        )
-
-        # Parse the response
-        response_data = response.json()
-        return adapter.parse_response(response_data, request)
+        # Make the HTTP request with rate limiting
+        try:
+            # Estimate tokens
+            estimated_tokens = self._estimate_tokens(formatted_request)
+            
+            # Acquire rate limits
+            with self._acquire_rate_limits_sync(estimated_tokens):
+                # Make the request
+                response = self.sync_client.request(
+                    "POST", adapter.get_endpoint(), json=formatted_request
+                )
+                
+                # Extract rate limit info
+                from .providers import extract_rate_limit_info
+                rate_limit_info = extract_rate_limit_info(
+                    dict(response.headers), self.config
+                )
+                
+                # Update our rate limits
+                if self.enable_adaptive_limits:
+                    self._update_rate_limits(rate_limit_info)
+                
+                # Handle rate limit errors
+                if response.status_code == 429:
+                    self.state.consecutive_rate_limit_errors += 1
+                    if rate_limit_info.retry_after:
+                        import time
+                        time.sleep(rate_limit_info.retry_after)
+                    else:
+                        # Exponential backoff
+                        import time
+                        backoff = self.config.base_backoff * (
+                            2**self.state.consecutive_rate_limit_errors
+                        )
+                        time.sleep(min(backoff, self.config.max_backoff))
+                    
+                    response.raise_for_status()
+                else:
+                    # Reset consecutive errors on success
+                    self.state.consecutive_rate_limit_errors = 0
+                
+                # Parse the response
+                response_data = response.json()
+                return adapter.parse_response(response_data, request)
+                
+        except Exception as e:
+            # Handle errors and return error response
+            error_response = ChatCompletionResponse(
+                id="error",
+                model=request.model,
+                success=False,
+                error_message=str(e),
+                choices=[],
+                usage=None,
+                created=None,
+            )
+            return error_response
 
     # Convenience methods for different message types
 
