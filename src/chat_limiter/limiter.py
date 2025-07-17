@@ -185,8 +185,9 @@ class ChatLimiter:
         self._async_context_active = False
         self._sync_context_active = False
 
-        # Verbose mode (can be set by batch processor)
-        self._verbose_mode = False
+        # Logging configuration
+        self._print_rate_limit_info = False
+        self._print_request_initiation = False
 
     @classmethod
     def for_model(
@@ -440,9 +441,9 @@ class ChatLimiter:
         if self.config.supports_dynamic_limits:
             await self._discover_rate_limits()
 
-        # Print rate limit information if verbose mode is enabled
-        if self._verbose_mode:
-            self._print_rate_limit_info()
+        # Print rate limit information if enabled
+        if self._print_rate_limit_info:
+            self._print_rate_limit_info_details()
 
         return self
 
@@ -469,9 +470,9 @@ class ChatLimiter:
         if self.config.supports_dynamic_limits:
             self._discover_rate_limits_sync()
 
-        # Print rate limit information if verbose mode is enabled
-        if self._verbose_mode:
-            self._print_rate_limit_info()
+        # Print rate limit information if enabled
+        if self._print_rate_limit_info:
+            self._print_rate_limit_info_details()
 
         return self
 
@@ -500,7 +501,7 @@ class ChatLimiter:
 
             else:
                 # For other providers, we'll discover limits on first request
-                if self._verbose_mode:
+                if self._print_rate_limit_info:
                     print(
                         f"Rate limit discovery will happen on first request for {self.provider.value}"
                     )
@@ -547,12 +548,12 @@ class ChatLimiter:
                 message = (
                     f"Discovered request limit: {self.state.request_limit} req/min"
                 )
-                if self._verbose_mode:
+                if self._print_rate_limit_info:
                     print(message)
                 logger.info(message)
             else:
                 message = f"Updated request limit: {old_limit} -> {self.state.request_limit} req/min"
-                if self._verbose_mode:
+                if self._print_rate_limit_info:
                     print(message)
                 logger.info(message)
 
@@ -566,12 +567,12 @@ class ChatLimiter:
             updated = True
             if was_uninitialized:
                 message = f"Discovered token limit: {self.state.token_limit} tokens/min"
-                if self._verbose_mode:
+                if self._print_rate_limit_info:
                     print(message)
                 logger.info(message)
             else:
                 message = f"Updated token limit: {old_limit} -> {self.state.token_limit} tokens/min"
-                if self._verbose_mode:
+                if self._print_rate_limit_info:
                     print(message)
                 logger.info(message)
 
@@ -588,10 +589,10 @@ class ChatLimiter:
 
             if was_uninitialized:
                 message = "Rate limiters initialized after discovery"
-                if self._verbose_mode:
+                if self._print_rate_limit_info:
                     print(message)
                     # Print updated rate limit info after discovery
-                    self._print_rate_limit_info()
+                    self._print_rate_limit_info_details()
                 logger.info(message)
 
         # Store the rate limit info
@@ -813,6 +814,10 @@ class ChatLimiter:
 
         # Make the HTTP request with rate limiting
         try:
+            # Print request initiation if enabled
+            if self._print_request_initiation:
+                print(f"Sending request for model {model} (attempt 1)")
+            
             # Estimate tokens
             estimated_tokens = self._estimate_tokens(formatted_request)
             
@@ -924,6 +929,10 @@ class ChatLimiter:
 
         # Make the HTTP request with rate limiting
         try:
+            # Print request initiation if enabled
+            if self._print_request_initiation:
+                print(f"Sending request for model {model} (attempt 1)")
+            
             # Estimate tokens
             estimated_tokens = self._estimate_tokens(formatted_request)
             
@@ -1050,11 +1059,15 @@ class ChatLimiter:
             return response.choices[0].message.content
         return ""
 
-    def set_verbose_mode(self, verbose: bool) -> None:
-        """Set verbose mode for detailed logging."""
-        self._verbose_mode = verbose
+    def set_print_rate_limit_info(self, enabled: bool) -> None:
+        """Set whether to print rate limit information."""
+        self._print_rate_limit_info = enabled
 
-    def _print_rate_limit_info(self) -> None:
+    def set_print_request_initiation(self, enabled: bool) -> None:
+        """Set whether to print request initiation messages."""
+        self._print_request_initiation = enabled
+
+    def _print_rate_limit_info_details(self) -> None:
         """Print current rate limit configuration."""
         print(f"\n=== Rate Limit Configuration for {self.provider.value.title()} ===")
         print(f"Provider: {self.provider.value}")

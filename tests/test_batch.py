@@ -27,7 +27,13 @@ class TestBatchConfig:
         assert config.show_progress is True
         assert config.stop_on_first_error is False
         assert config.collect_errors is True
-        assert config.verbose is False
+        # Test fine-grained logging configurations
+        assert config.print_prompts is False
+        assert config.print_responses is False
+        assert config.verbose_timeouts is False
+        assert config.verbose_exceptions is False
+        assert config.print_rate_limits is False
+        assert config.print_request_initiation is False
         assert config.adaptive_batch_size is True
         assert config.group_by_model is True
         assert config.group_by_provider is True

@@ -53,7 +53,14 @@ class BatchConfig:
     # Error handling
     stop_on_first_error: bool = False
     collect_errors: bool = True
-    verbose: bool = False
+    
+    # Fine-grained logging configuration
+    print_prompts: bool = False
+    print_responses: bool = False
+    verbose_timeouts: bool = False
+    verbose_exceptions: bool = False
+    print_rate_limits: bool = False
+    print_request_initiation: bool = False
 
     # Batch size optimization
     adaptive_batch_size: bool = True
@@ -122,9 +129,9 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
         self._results: list[BatchResult[BatchResultT]] = []
         self._errors: list[Exception] = []
         
-        # Enable verbose mode on limiter if config specifies it
-        if hasattr(self.limiter, 'set_verbose_mode'):
-            self.limiter.set_verbose_mode(self.config.verbose)
+        # Configure limiter logging based on batch config
+        self.limiter.set_print_rate_limit_info(self.config.print_rate_limits)
+        self.limiter.set_print_request_initiation(self.config.print_request_initiation)
 
     @abstractmethod
     async def process_item(self, item: BatchItem[BatchItemT]) -> BatchResultT:
@@ -340,6 +347,10 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                 item.attempt_count = attempt + 1
 
                 try:
+                    # Print request initiation if enabled
+                    if self.config.print_request_initiation:
+                        print(f"Sent request for batch item {item.id} (attempt {attempt + 1})")
+                    
                     # Process the item
                     result = await self.process_item(item)
 
@@ -366,23 +377,23 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                         'ReadTimeout' in str(type(e)) or 'timeout' in str(e).lower()
                     )
 
-                    # Print user-friendly error messages
-                    if self.config.verbose:
-                        if is_timeout_error:
-                            # Get current timeout from the limiter
-                            current_timeout = getattr(self.limiter, '_user_timeout', 120.0)
-                            print(f"⏱️  TIMEOUT ERROR in batch item {item.id} (attempt {attempt + 1}):")
-                            print(f"   Current timeout setting: {current_timeout} seconds")
-                            print(f"   The request took longer than {current_timeout}s to complete.")
-                            print(f"")
-                            print(f"💡 How to fix this:")
-                            print(f"   1. Increase timeout: ChatLimiter.for_model('{getattr(self.limiter, 'provider', 'your-model')}', timeout={current_timeout + 60})")
-                            print(f"   2. Reduce concurrency: BatchConfig(max_concurrent_requests={max(1, self.config.max_concurrent_requests // 2)})")
-                            print(f"   3. Current concurrency: {self.config.max_concurrent_requests} requests")
-                            print(f"")
-                        else:
-                            print(f"❌ Exception in batch item {item.id} (attempt {attempt + 1}):")
-                        
+                    # Print user-friendly error messages based on config
+                    if is_timeout_error and self.config.verbose_timeouts:
+                        # Get current timeout from the limiter
+                        current_timeout = getattr(self.limiter, '_user_timeout', 120.0)
+                        print(f"⏱️  TIMEOUT ERROR in batch item {item.id} (attempt {attempt + 1}):")
+                        print(f"   Current timeout setting: {current_timeout} seconds")
+                        print(f"   The request took longer than {current_timeout}s to complete.")
+                        print(f"")
+                        print(f"💡 How to fix this:")
+                        print(f"   1. Increase timeout: ChatLimiter.for_model('{getattr(self.limiter, 'provider', 'your-model')}', timeout={current_timeout + 60})")
+                        print(f"   2. Reduce concurrency: BatchConfig(max_concurrent_requests={max(1, self.config.max_concurrent_requests // 2)})")
+                        print(f"   3. Current concurrency: {self.config.max_concurrent_requests} requests")
+                        print(f"")
+                    elif not is_timeout_error and self.config.verbose_exceptions:
+                        print(f"❌ Exception in batch item {item.id} (attempt {attempt + 1}):")
+                    
+                    if self.config.verbose_exceptions:
                         traceback.print_exc()
 
                     # If this is the last attempt or we should stop on error
@@ -434,6 +445,10 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
             item.attempt_count = attempt + 1
 
             try:
+                # Print request initiation if enabled
+                if self.config.print_request_initiation:
+                    print(f"Sent request for batch item {item.id} (attempt {attempt + 1})")
+                
                 # Process the item
                 result = self.process_item_sync(item)
 
@@ -453,8 +468,8 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
             except Exception as e:
                 item.last_error = e
 
-                # Print traceback if verbose mode is enabled
-                if self.config.verbose:
+                # Print traceback if verbose exceptions is enabled
+                if self.config.verbose_exceptions:
                     print(f"Exception in batch item {item.id} (attempt {attempt + 1}):")
                     traceback.print_exc()
 
@@ -534,8 +549,8 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
         """Process a single chat completion request using high-level interface."""
         request = item.data
 
-        # Log prompt if verbose mode is enabled
-        if self.config.verbose:
+        # Log prompt if enabled
+        if self.config.print_prompts:
             print(f"\n--- PROMPT (Item {item.id}) ---")
             print(f"MODEL: {request.model}")
             for msg in request.messages:
@@ -561,8 +576,8 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
         if not response.success:
             raise Exception(f"Chat completion failed: {response.error_message}")
 
-        # Log response if verbose mode is enabled
-        if self.config.verbose:
+        # Log response if enabled
+        if self.config.print_responses:
             print(f"\n--- RESPONSE (Item {item.id}) ---")
             print(f"MODEL: {response.model}")
             if response.choices:
@@ -576,8 +591,8 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
         """Process a single chat completion request synchronously using high-level interface."""
         request = item.data
 
-        # Log prompt if verbose mode is enabled
-        if self.config.verbose:
+        # Log prompt if enabled
+        if self.config.print_prompts:
             print(f"\n--- PROMPT (Item {item.id}) ---")
             print(f"MODEL: {request.model}")
             for msg in request.messages:
@@ -603,8 +618,8 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
         if not response.success:
             raise Exception(f"Chat completion failed: {response.error_message}")
 
-        # Log response if verbose mode is enabled
-        if self.config.verbose:
+        # Log response if enabled
+        if self.config.print_responses:
             print(f"\n--- RESPONSE (Item {item.id}) ---")
             print(f"MODEL: {response.model}")
             if response.choices:
