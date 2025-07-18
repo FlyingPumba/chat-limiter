@@ -34,6 +34,9 @@ class TestBatchConfig:
         assert config.verbose_exceptions is False
         assert config.print_rate_limits is False
         assert config.print_request_initiation is False
+        
+        # Test response format configuration
+        assert config.json_mode is False
         assert config.adaptive_batch_size is True
         assert config.group_by_model is True
         assert config.group_by_provider is True

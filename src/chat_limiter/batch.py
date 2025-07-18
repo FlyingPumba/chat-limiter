@@ -61,6 +61,9 @@ class BatchConfig:
     verbose_exceptions: bool = False
     print_rate_limits: bool = False
     print_request_initiation: bool = False
+    
+    # Response format configuration
+    json_mode: bool = False
 
     # Batch size optimization
     adaptive_batch_size: bool = True
@@ -549,6 +552,11 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
         """Process a single chat completion request using high-level interface."""
         request = item.data
 
+        # Check json_mode compatibility
+        if self.config.json_mode:
+            assert self.limiter.provider.value == "openai", \
+                f"json_mode is only supported with OpenAI provider, but got '{self.limiter.provider.value}'"
+
         # Log prompt if enabled
         if self.config.print_prompts:
             print(f"\n--- PROMPT (Item {item.id}) ---")
@@ -558,19 +566,25 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
             print("--- END PROMPT ---\n")
 
         # Use the high-level chat completion method
-        response = await self.limiter.chat_completion(
-            model=request.model,
-            messages=request.messages,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            top_p=request.top_p,
-            stop=request.stop,
-            stream=request.stream,
+        kwargs = {
+            "model": request.model,
+            "messages": request.messages,
+            "max_tokens": request.max_tokens,
+            "temperature": request.temperature,
+            "top_p": request.top_p,
+            "stop": request.stop,
+            "stream": request.stream,
             # Provider-specific parameters
-            frequency_penalty=request.frequency_penalty,
-            presence_penalty=request.presence_penalty,
-            top_k=request.top_k,
-        )
+            "frequency_penalty": request.frequency_penalty,
+            "presence_penalty": request.presence_penalty,
+            "top_k": request.top_k,
+        }
+        
+        # Add json_mode if enabled
+        if self.config.json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        
+        response = await self.limiter.chat_completion(**kwargs)
 
         # Check for errors in the response
         if not response.success:
@@ -591,6 +605,11 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
         """Process a single chat completion request synchronously using high-level interface."""
         request = item.data
 
+        # Check json_mode compatibility
+        if self.config.json_mode:
+            assert self.limiter.provider.value == "openai", \
+                f"json_mode is only supported with OpenAI provider, but got '{self.limiter.provider.value}'"
+
         # Log prompt if enabled
         if self.config.print_prompts:
             print(f"\n--- PROMPT (Item {item.id}) ---")
@@ -600,19 +619,25 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
             print("--- END PROMPT ---\n")
 
         # Use the high-level chat completion method (sync)
-        response = self.limiter.chat_completion_sync(
-            model=request.model,
-            messages=request.messages,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            top_p=request.top_p,
-            stop=request.stop,
-            stream=request.stream,
+        kwargs = {
+            "model": request.model,
+            "messages": request.messages,
+            "max_tokens": request.max_tokens,
+            "temperature": request.temperature,
+            "top_p": request.top_p,
+            "stop": request.stop,
+            "stream": request.stream,
             # Provider-specific parameters
-            frequency_penalty=request.frequency_penalty,
-            presence_penalty=request.presence_penalty,
-            top_k=request.top_k,
-        )
+            "frequency_penalty": request.frequency_penalty,
+            "presence_penalty": request.presence_penalty,
+            "top_k": request.top_k,
+        }
+        
+        # Add json_mode if enabled
+        if self.config.json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        
+        response = self.limiter.chat_completion_sync(**kwargs)
 
         # Check for errors in the response
         if not response.success:
