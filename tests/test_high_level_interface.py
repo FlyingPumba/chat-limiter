@@ -11,18 +11,28 @@ class TestChatLimiterForModel:
 
     def test_for_model_openai(self):
         """Test for_model with OpenAI model."""
-        limiter = ChatLimiter.for_model("gpt-4o", api_key="sk-test")
+        limiter = ChatLimiter.for_model("gpt-4o", api_key="sk-test", use_dynamic_discovery=False)
         assert limiter.provider == Provider.OPENAI
 
     def test_for_model_anthropic(self):
         """Test for_model with Anthropic model."""
-        limiter = ChatLimiter.for_model("claude-3-sonnet-20240229", api_key="sk-ant-test")
+        limiter = ChatLimiter.for_model("claude-3-sonnet-20240229", api_key="sk-ant-test", use_dynamic_discovery=False)
         assert limiter.provider == Provider.ANTHROPIC
 
     def test_for_model_openrouter(self):
         """Test for_model with OpenRouter model."""
-        limiter = ChatLimiter.for_model("openai/gpt-4o", api_key="sk-or-test")
+        limiter = ChatLimiter.for_model("meta-llama/llama-3.1-405b-instruct", api_key="sk-or-test", use_dynamic_discovery=False)
         assert limiter.provider == Provider.OPENROUTER
+
+    def test_for_model_openai_with_prefix(self):
+        """Test for_model with openai/ prefix routes to OpenAI when base model exists."""
+        limiter = ChatLimiter.for_model("openai/gpt-4o", api_key="sk-test", use_dynamic_discovery=False)
+        assert limiter.provider == Provider.OPENAI
+
+    def test_for_model_anthropic_with_prefix(self):
+        """Test for_model with anthropic/ prefix routes to Anthropic when base model exists."""
+        limiter = ChatLimiter.for_model("anthropic/claude-3-sonnet-20240229", api_key="sk-ant-test", use_dynamic_discovery=False)
+        assert limiter.provider == Provider.ANTHROPIC
 
     def test_for_model_unknown(self):
         """Test for_model with unknown model."""

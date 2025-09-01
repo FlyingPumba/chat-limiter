@@ -71,12 +71,12 @@ class OpenAIAdapter(ProviderAdapter):
                 openai_request["max_completion_tokens"] = request.max_tokens
             else:
                 openai_request["max_tokens"] = request.max_tokens
-        
+
         # Handle temperature for reasoning models
         if self.is_reasoning_model(request.model):
             # For reasoning models, default to temperature=1
             default_temperature = 1.0
-            
+
             if request.temperature is not None:
                 # If user provided a different temperature, warn them and use temperature=1
                 if request.temperature != default_temperature:
@@ -87,14 +87,14 @@ class OpenAIAdapter(ProviderAdapter):
                     )
                     print(f"WARNING: Model '{request.model}' is a reasoning model that requires temperature=1. "
                           f"Your specified temperature={request.temperature} will be overridden to temperature=1.")
-            
+
             # Always use temperature=1 for reasoning models
             openai_request["temperature"] = default_temperature
         else:
             # For non-reasoning models, use the provided temperature
             if request.temperature is not None:
                 openai_request["temperature"] = request.temperature
-        
+
         if request.top_p is not None:
             openai_request["top_p"] = request.top_p
         if request.stop is not None:
@@ -117,7 +117,7 @@ class OpenAIAdapter(ProviderAdapter):
         # Check for errors first
         success = True
         error_message = None
-        
+
         if "error" in response_data:
             success = False
             error_data = response_data["error"]
@@ -218,7 +218,7 @@ class AnthropicAdapter(ProviderAdapter):
         # Check for errors first
         success = True
         error_message = None
-        
+
         if "error" in response_data:
             success = False
             error_data = response_data["error"]
@@ -318,7 +318,7 @@ class OpenRouterAdapter(ProviderAdapter):
         # Check for errors first
         success = True
         error_message = None
-        
+
         if "error" in response_data:
             success = False
             error_data = response_data["error"]

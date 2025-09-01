@@ -161,6 +161,104 @@ class TestProviderDetection:
             assert result.model_found == True
 
     @pytest.mark.asyncio
+    async def test_openai_o3_bug_was_fixed(self):
+        """Test that openai/o3 bug has been fixed - now correctly uses OpenAI provider."""
+        api_keys = {
+            "openai": "test-openai-key",
+            "openrouter": "test-openrouter-key"
+        }
+        
+        # Mock the API responses - OpenAI has "o3" model, OpenRouter has "openai/o3"
+        mock_openai = AsyncMock(return_value={"o3", "gpt-4o", "gpt-3.5-turbo"})
+        mock_openrouter = AsyncMock(return_value={"openai/o3", "openai/gpt-4o", "anthropic/claude-3-sonnet"})
+        
+        with patch.object(ModelDiscovery, "get_openai_models", mock_openai), \
+             patch.object(ModelDiscovery, "get_openrouter_models", mock_openrouter):
+            
+            # Fixed behavior: should prioritize OpenAI for openai/ prefixed models
+            # when the base model exists in OpenAI
+            result = await detect_provider_from_model_async("openai/o3", api_keys)
+            
+            # Fixed: now correctly uses OpenAI provider
+            assert result.found_provider == "openai"
+            assert result.model_found == True
+            
+            # The fix ensures that:
+            # 1. The model starts with "openai/" so we prefer OpenAI
+            # 2. "o3" exists in OpenAI models
+            # 3. So we use "o3" from OpenAI instead of "openai/o3" from OpenRouter
+
+    @pytest.mark.asyncio
+    async def test_openai_o3_expected_behavior(self):
+        """Test expected behavior: openai/o3 should use o3 from OpenAI provider when available."""
+        api_keys = {
+            "openai": "test-openai-key",
+            "openrouter": "test-openrouter-key"
+        }
+        
+        # Mock the API responses - OpenAI has "o3" model, OpenRouter has "openai/o3"
+        mock_openai = AsyncMock(return_value={"o3", "gpt-4o", "gpt-3.5-turbo"})
+        mock_openrouter = AsyncMock(return_value={"openai/o3", "openai/gpt-4o", "anthropic/claude-3-sonnet"})
+        
+        with patch.object(ModelDiscovery, "get_openai_models", mock_openai), \
+             patch.object(ModelDiscovery, "get_openrouter_models", mock_openrouter):
+            
+            # Expected behavior: should prioritize OpenAI for openai/ prefixed models
+            # when the base model exists in OpenAI
+            result = await detect_provider_from_model_async("openai/o3", api_keys)
+            
+            # Should use OpenAI provider with base model name "o3"
+            assert result.found_provider == "openai"
+            assert result.model_found == True
+            assert "o3" in result.openai_models
+
+    @pytest.mark.asyncio
+    async def test_anthropic_claude_expected_behavior(self):
+        """Test expected behavior: anthropic/claude-3-sonnet should use claude-3-sonnet from Anthropic when available."""
+        api_keys = {
+            "anthropic": "test-anthropic-key",
+            "openrouter": "test-openrouter-key"
+        }
+        
+        # Mock the API responses - Anthropic has the base model, OpenRouter has prefixed version
+        mock_anthropic = AsyncMock(return_value={"claude-3-sonnet", "claude-3-haiku"})
+        mock_openrouter = AsyncMock(return_value={"anthropic/claude-3-sonnet", "openai/gpt-4o"})
+        
+        with patch.object(ModelDiscovery, "get_anthropic_models", mock_anthropic), \
+             patch.object(ModelDiscovery, "get_openrouter_models", mock_openrouter):
+            
+            # Should use Anthropic provider with base model name
+            result = await detect_provider_from_model_async("anthropic/claude-3-sonnet", api_keys)
+            
+            # Should use Anthropic provider
+            assert result.found_provider == "anthropic"
+            assert result.model_found == True
+            assert "claude-3-sonnet" in result.anthropic_models
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_openrouter_when_base_model_not_found(self):
+        """Test fallback: use OpenRouter when base model doesn't exist in preferred provider."""
+        api_keys = {
+            "openai": "test-openai-key",
+            "openrouter": "test-openrouter-key"
+        }
+        
+        # Mock the API responses - OpenAI doesn't have "some-custom-model", but OpenRouter has "openai/some-custom-model"
+        mock_openai = AsyncMock(return_value={"o3", "gpt-4o", "gpt-3.5-turbo"})  # No "some-custom-model"
+        mock_openrouter = AsyncMock(return_value={"openai/some-custom-model", "openai/gpt-4o"})
+        
+        with patch.object(ModelDiscovery, "get_openai_models", mock_openai), \
+             patch.object(ModelDiscovery, "get_openrouter_models", mock_openrouter):
+            
+            # Should fallback to OpenRouter since "some-custom-model" doesn't exist in OpenAI
+            result = await detect_provider_from_model_async("openai/some-custom-model", api_keys)
+            
+            # Should use OpenRouter as fallback
+            assert result.found_provider == "openrouter"
+            assert result.model_found == True
+            assert "openai/some-custom-model" in result.openrouter_models
+
+    @pytest.mark.asyncio
     async def test_detect_provider_from_model_async_with_api_keys(self):
         """Test detection with API keys for live queries."""
         api_keys = {

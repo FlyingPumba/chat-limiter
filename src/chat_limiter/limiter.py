@@ -25,7 +25,6 @@ from .providers import (
     ProviderConfig,
     RateLimitInfo,
     detect_provider_from_url,
-    extract_rate_limit_info,
     get_provider_config,
 )
 from .types import (
@@ -299,7 +298,7 @@ class ChatLimiter:
 
                 # Add information about discovery errors if any
                 if discovery_result and discovery_result.errors:
-                    error_msg += f"\n\nDiscovery errors encountered:\n"
+                    error_msg += "\n\nDiscovery errors encountered:\n"
                     for provider_name, error in discovery_result.errors.items():
                         error_msg += f"  {provider_name}: {error}\n"
 
@@ -723,7 +722,7 @@ class ChatLimiter:
             self.state.tokens_used += estimated_tokens
             self.state.last_request_time = time.time()
 
-    def _get_retry_decorator(self):
+    def _get_retry_decorator(self) -> Any:
         """Get retry decorator with user-configured parameters."""
         return retry(
             stop=stop_after_attempt(self._user_max_retries),
@@ -817,27 +816,27 @@ class ChatLimiter:
             # Print request initiation if enabled
             if self._print_request_initiation:
                 print(f"Sending request for model {model} (attempt 1)")
-            
+
             # Estimate tokens
             estimated_tokens = self._estimate_tokens(formatted_request)
-            
+
             # Acquire rate limits
             async with self._acquire_rate_limits(estimated_tokens):
                 # Make the request
                 response = await self.async_client.request(
                     "POST", adapter.get_endpoint(), json=formatted_request
                 )
-                
+
                 # Extract rate limit info
                 from .providers import extract_rate_limit_info
                 rate_limit_info = extract_rate_limit_info(
                     dict(response.headers), self.config
                 )
-                
+
                 # Update our rate limits
                 if self.enable_adaptive_limits:
                     self._update_rate_limits(rate_limit_info)
-                
+
                 # Handle rate limit errors
                 if response.status_code == 429:
                     self.state.consecutive_rate_limit_errors += 1
@@ -851,16 +850,16 @@ class ChatLimiter:
                             2**self.state.consecutive_rate_limit_errors
                         )
                         await asyncio.sleep(min(backoff, self.config.max_backoff))
-                    
+
                     response.raise_for_status()
                 else:
                     # Reset consecutive errors on success
                     self.state.consecutive_rate_limit_errors = 0
-                
+
                 # Parse the response
                 response_data = response.json()
                 return adapter.parse_response(response_data, request)
-                
+
         except Exception as e:
             # Handle errors and return error response
             error_response = ChatCompletionResponse(
@@ -932,27 +931,27 @@ class ChatLimiter:
             # Print request initiation if enabled
             if self._print_request_initiation:
                 print(f"Sending request for model {model} (attempt 1)")
-            
+
             # Estimate tokens
             estimated_tokens = self._estimate_tokens(formatted_request)
-            
+
             # Acquire rate limits
             with self._acquire_rate_limits_sync(estimated_tokens):
                 # Make the request
                 response = self.sync_client.request(
                     "POST", adapter.get_endpoint(), json=formatted_request
                 )
-                
+
                 # Extract rate limit info
                 from .providers import extract_rate_limit_info
                 rate_limit_info = extract_rate_limit_info(
                     dict(response.headers), self.config
                 )
-                
+
                 # Update our rate limits
                 if self.enable_adaptive_limits:
                     self._update_rate_limits(rate_limit_info)
-                
+
                 # Handle rate limit errors
                 if response.status_code == 429:
                     self.state.consecutive_rate_limit_errors += 1
@@ -966,16 +965,16 @@ class ChatLimiter:
                             2**self.state.consecutive_rate_limit_errors
                         )
                         time.sleep(min(backoff, self.config.max_backoff))
-                    
+
                     response.raise_for_status()
                 else:
                     # Reset consecutive errors on success
                     self.state.consecutive_rate_limit_errors = 0
-                
+
                 # Parse the response
                 response_data = response.json()
                 return adapter.parse_response(response_data, request)
-                
+
         except Exception as e:
             # Handle errors and return error response
             error_response = ChatCompletionResponse(

@@ -132,11 +132,30 @@ def detect_provider_from_model(model: str, use_dynamic_discovery: bool = False, 
     Returns:
         Provider name or None if not found
     """
-    # First try pattern-based detection for common cases
-    if "/" in model:  # OpenRouter format
-        return "openrouter"
+    # Handle provider-prefixed models (e.g., "openai/o3", "anthropic/claude-3-sonnet")
+    preferred_provider = None
+    base_model = model
 
-    # Check hardcoded lists for fast lookup
+    if "/" in model:
+        parts = model.split("/", 1)
+        if len(parts) == 2:
+            provider_prefix, base_model = parts
+            if provider_prefix == "openai":
+                preferred_provider = "openai"
+            elif provider_prefix == "anthropic":
+                preferred_provider = "anthropic"
+
+    # If we have a preferred provider, check if the base model exists in hardcoded lists
+    if preferred_provider:
+        if preferred_provider == "openai" and base_model in OPENAI_MODELS:
+            return "openai"
+        elif preferred_provider == "anthropic" and base_model in ANTHROPIC_MODELS:
+            return "anthropic"
+        # If base model not found in preferred provider, fall back to checking if full model is in OpenRouter
+        elif model in OPENROUTER_MODELS:
+            return "openrouter"
+
+    # Check hardcoded lists for fast lookup (for models without provider prefix)
     if model in OPENAI_MODELS:
         return "openai"
     elif model in ANTHROPIC_MODELS:

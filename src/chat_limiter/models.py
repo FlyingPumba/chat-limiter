@@ -23,19 +23,19 @@ _cache_duration = timedelta(hours=1)  # Cache models for 1 hour
 @dataclass
 class ModelDiscoveryResult:
     """Result of model discovery process."""
-    
+
     # Discovery result
     found_provider: str | None = None
     model_found: bool = False
-    
+
     # All models found for each provider
     openai_models: set[str] | None = None
     anthropic_models: set[str] | None = None
     openrouter_models: set[str] | None = None
-    
+
     # Errors encountered during discovery
     errors: dict[str, str] | None = None
-    
+
     def get_all_models(self) -> dict[str, set[str]]:
         """Get all models organized by provider."""
         result = {}
@@ -46,7 +46,7 @@ class ModelDiscoveryResult:
         if self.openrouter_models is not None:
             result["openrouter"] = self.openrouter_models
         return result
-    
+
     def get_total_models_found(self) -> int:
         """Get total number of models found across all providers."""
         total = 0
@@ -225,16 +225,18 @@ async def detect_provider_from_model_async(
 
     result = ModelDiscoveryResult(errors={})
 
-    # First try simple pattern matching for known formats
-    if "/" in model:  # OpenRouter format
-        result.found_provider = "openrouter"
-        result.model_found = True
-        # Still try to get OpenRouter models to populate the result
-        try:
-            result.openrouter_models = await ModelDiscovery.get_openrouter_models(api_keys.get("openrouter"))
-        except Exception as e:
-            result.errors["openrouter"] = str(e)
-        return result
+    # Handle provider-prefixed models (e.g., "openai/o3", "anthropic/claude-3-sonnet")
+    preferred_provider = None
+    base_model = model
+
+    if "/" in model:
+        parts = model.split("/", 1)
+        if len(parts) == 2:
+            provider_prefix, base_model = parts
+            if provider_prefix == "openai":
+                preferred_provider = "openai"
+            elif provider_prefix == "anthropic":
+                preferred_provider = "anthropic"
 
     # Create all tasks
     tasks = []
@@ -256,33 +258,59 @@ async def detect_provider_from_model_async(
         # Extract just the coroutines for gather
         coroutines = [task[1] for task in tasks]
         provider_names = [task[0] for task in tasks]
-        
+
         # Wait for all results
         results = await asyncio.gather(*coroutines, return_exceptions=True)
-        
+
         # Process results and store all model information
-        for provider_name, models_result in zip(provider_names, results):
+        for provider_name, models_result in zip(provider_names, results, strict=False):
             if isinstance(models_result, Exception):
                 logger.debug(f"Failed to check {provider_name} for model {model}: {models_result}")
-                result.errors[provider_name] = str(models_result)
+                if result.errors is not None:
+                    result.errors[provider_name] = str(models_result)
                 continue
-            
+
             # Store models in result
-            if provider_name == "openai":
+            if provider_name == "openai" and isinstance(models_result, set):
                 result.openai_models = models_result
-            elif provider_name == "anthropic":
+            elif provider_name == "anthropic" and isinstance(models_result, set):
                 result.anthropic_models = models_result
-            elif provider_name == "openrouter":
+            elif provider_name == "openrouter" and isinstance(models_result, set):
                 result.openrouter_models = models_result
-            
-            # Check if our target model was found
-            if model in models_result and not result.model_found:
-                result.found_provider = provider_name
+
+        # Determine the best provider to use
+        if preferred_provider and not result.model_found:
+            # Check if base model exists in preferred provider
+            provider_models = None
+            if preferred_provider == "openai" and result.openai_models:
+                provider_models = result.openai_models
+            elif preferred_provider == "anthropic" and result.anthropic_models:
+                provider_models = result.anthropic_models
+
+            if provider_models and base_model in provider_models:
+                result.found_provider = preferred_provider
                 result.model_found = True
-                
+            elif result.openrouter_models and model in result.openrouter_models:
+                # Fallback to OpenRouter if base model not found in preferred provider
+                result.found_provider = "openrouter"
+                result.model_found = True
+
+        # For models without provider prefix, use original logic
+        if not result.model_found:
+            for provider_name, models_result in zip(provider_names, results, strict=False):
+                if isinstance(models_result, Exception):
+                    continue
+
+                # Check if our target model was found
+                if isinstance(models_result, set) and model in models_result:
+                    result.found_provider = provider_name
+                    result.model_found = True
+                    break
+
     except Exception as e:
         logger.debug(f"Failed to run dynamic discovery for model {model}: {e}")
-        result.errors["general"] = str(e)
+        if result.errors is not None:
+            result.errors["general"] = str(e)
 
     return result
 
@@ -294,18 +322,18 @@ def detect_provider_from_model_sync(
     """Synchronous version of detect_provider_from_model_async."""
     # Check if we're already in an async context
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
         # We're in an async context, but need to run in sync mode
         # Create a new event loop in a thread
         import concurrent.futures
-        
-        def run_in_thread():
+
+        def run_in_thread() -> ModelDiscoveryResult:
             return asyncio.run(detect_provider_from_model_async(model, api_keys))
-        
+
         with concurrent.futures.ThreadPoolExecutor() as executor:
             future = executor.submit(run_in_thread)
             return future.result(timeout=30)  # 30 second timeout
-            
+
     except RuntimeError:
         # No running loop, safe to use asyncio.run
         return asyncio.run(detect_provider_from_model_async(model, api_keys))

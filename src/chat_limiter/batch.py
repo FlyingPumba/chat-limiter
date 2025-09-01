@@ -17,8 +17,6 @@ from typing import (
 )
 
 import httpx
-
-from tqdm.asyncio import tqdm as atqdm
 from tqdm import tqdm
 
 if TYPE_CHECKING:
@@ -53,7 +51,7 @@ class BatchConfig:
     # Error handling
     stop_on_first_error: bool = False
     collect_errors: bool = True
-    
+
     # Fine-grained logging configuration
     print_prompts: bool = False
     print_responses: bool = False
@@ -61,7 +59,7 @@ class BatchConfig:
     verbose_exceptions: bool = False
     print_rate_limits: bool = False
     print_request_initiation: bool = False
-    
+
     # Response format configuration
     json_mode: bool = False
 
@@ -131,7 +129,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
         self.config = config or BatchConfig()
         self._results: list[BatchResult[BatchResultT]] = []
         self._errors: list[Exception] = []
-        
+
         # Configure limiter logging based on batch config
         self.limiter.set_print_rate_limit_info(self.config.print_rate_limits)
         self.limiter.set_print_request_initiation(self.config.print_request_initiation)
@@ -191,10 +189,10 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
 
         # Process groups
         all_results = []
-        
+
         # Calculate total items for progress tracking
         total_items = sum(len(group_items) for group_items in grouped_items.values())
-        
+
         # Initialize progress bar if enabled
         progress_bar = None
         if self.config.show_progress:
@@ -203,7 +201,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                 desc=self.config.progress_desc,
                 unit="item"
             )
-        
+
         for group_name, group_items in grouped_items.items():
             logger.info(
                 f"Processing group '{group_name}' with {len(group_items)} items"
@@ -261,7 +259,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
 
         # Calculate total items for progress tracking
         total_items = sum(len(group_items) for group_items in grouped_items.values())
-        
+
         # Initialize progress bar if enabled
         progress_bar = None
         if self.config.show_progress:
@@ -353,7 +351,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                     # Print request initiation if enabled
                     if self.config.print_request_initiation:
                         print(f"Sent request for batch item {item.id} (attempt {attempt + 1})")
-                    
+
                     # Process the item
                     result = await self.process_item(item)
 
@@ -372,7 +370,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
 
                 except Exception as e:
                     item.last_error = e
-                    
+
                     # Check if this is a timeout error
                     is_timeout_error = (
                         isinstance(e, (httpx.ReadTimeout, httpx.ConnectTimeout)) or
@@ -387,15 +385,15 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                         print(f"⏱️  TIMEOUT ERROR in batch item {item.id} (attempt {attempt + 1}):")
                         print(f"   Current timeout setting: {current_timeout} seconds")
                         print(f"   The request took longer than {current_timeout}s to complete.")
-                        print(f"")
-                        print(f"💡 How to fix this:")
+                        print("")
+                        print("💡 How to fix this:")
                         print(f"   1. Increase timeout: ChatLimiter.for_model('{getattr(self.limiter, 'provider', 'your-model')}', timeout={current_timeout + 60})")
                         print(f"   2. Reduce concurrency: BatchConfig(max_concurrent_requests={max(1, self.config.max_concurrent_requests // 2)})")
                         print(f"   3. Current concurrency: {self.config.max_concurrent_requests} requests")
-                        print(f"")
+                        print("")
                     elif not is_timeout_error and self.config.verbose_exceptions:
                         print(f"❌ Exception in batch item {item.id} (attempt {attempt + 1}):")
-                    
+
                     if self.config.verbose_exceptions:
                         traceback.print_exc()
 
@@ -407,7 +405,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                         # Update progress bar on final failure
                         if progress_bar:
                             progress_bar.update(1)
-                            
+
                         return BatchResult(
                             item=item,
                             success=False,
@@ -422,7 +420,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                         retry_delay = self.config.retry_delay * (3**attempt)  # More aggressive backoff
                     else:
                         retry_delay = self.config.retry_delay * (2**attempt)
-                    
+
                     await asyncio.sleep(retry_delay)
 
         # This should never be reached, but added for type checking
@@ -451,7 +449,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                 # Print request initiation if enabled
                 if self.config.print_request_initiation:
                     print(f"Sent request for batch item {item.id} (attempt {attempt + 1})")
-                
+
                 # Process the item
                 result = self.process_item_sync(item)
 
@@ -484,7 +482,7 @@ class BatchProcessor(ABC, Generic[BatchItemT, BatchResultT]):
                     # Update progress bar on final failure
                     if progress_bar:
                         progress_bar.update(1)
-                        
+
                     return BatchResult(
                         item=item,
                         success=False,
@@ -579,11 +577,11 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
             "presence_penalty": request.presence_penalty,
             "top_k": request.top_k,
         }
-        
+
         # Add json_mode if enabled
         if self.config.json_mode:
             kwargs["response_format"] = {"type": "json_object"}
-        
+
         response = await self.limiter.chat_completion(**kwargs)
 
         # Check for errors in the response
@@ -632,11 +630,11 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
             "presence_penalty": request.presence_penalty,
             "top_k": request.top_k,
         }
-        
+
         # Add json_mode if enabled
         if self.config.json_mode:
             kwargs["response_format"] = {"type": "json_object"}
-        
+
         response = self.limiter.chat_completion_sync(**kwargs)
 
         # Check for errors in the response

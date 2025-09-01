@@ -198,16 +198,25 @@ class TestProviderDetection:
         assert detect_provider_from_model("claude-3-opus-20240229") == "anthropic"
         assert detect_provider_from_model("claude-3-haiku-20240307") == "anthropic"
 
-    def test_detect_openrouter_models(self):
-        """Test detection of OpenRouter models."""
-        assert detect_provider_from_model("openai/gpt-4o") == "openrouter"
-        assert detect_provider_from_model("anthropic/claude-3-opus") == "openrouter"
+    def test_detect_provider_with_prefix_prioritization(self):
+        """Test provider detection with prefix prioritization fix."""
+        # openai/ prefix should route to OpenAI when base model exists there
+        assert detect_provider_from_model("openai/gpt-4o") == "openai"
+        
+        # anthropic/ prefix should route to Anthropic when base model exists there  
+        assert detect_provider_from_model("anthropic/claude-3-opus-20240229") == "anthropic"
+        
+        # If base model doesn't exist in preferred provider, should check OpenRouter
+        assert detect_provider_from_model("anthropic/claude-3-opus") == "openrouter"  # "claude-3-opus" not in ANTHROPIC_MODELS
+        
+        # Models that only exist in OpenRouter should still go there
         assert detect_provider_from_model("meta-llama/llama-3.1-405b-instruct") == "openrouter"
 
-    def test_detect_openrouter_format(self):
-        """Test detection of OpenRouter format (provider/model)."""
-        assert detect_provider_from_model("some-provider/some-model") == "openrouter"
-        assert detect_provider_from_model("custom/model-name") == "openrouter"
+    def test_detect_unknown_prefixed_models(self):
+        """Test detection of models with unknown prefixes."""
+        # Unknown provider prefixes should return None since they're not in any hardcoded lists
+        assert detect_provider_from_model("some-provider/some-model") is None
+        assert detect_provider_from_model("custom/model-name") is None
 
     def test_detect_unknown_model(self):
         """Test detection of unknown models."""
