@@ -40,6 +40,9 @@ class TestBatchConfig:
         assert config.adaptive_batch_size is True
         assert config.group_by_model is True
         assert config.group_by_provider is True
+        
+        # Test reasoning configuration
+        assert config.reasoning_effort is None
 
     def test_batch_config_custom_values(self):
         """Test BatchConfig with custom values."""
@@ -54,6 +57,23 @@ class TestBatchConfig:
         assert config.max_retries_per_item == 5
         assert config.stop_on_first_error is True
         assert config.group_by_model is False
+
+    def test_reasoning_effort_validation(self):
+        """Test reasoning_effort validation in BatchConfig."""
+        # Valid values should work
+        for effort in [None, "low", "medium", "high"]:
+            config = BatchConfig(reasoning_effort=effort)
+            assert config.reasoning_effort == effort
+
+        # Invalid values should raise ValueError
+        with pytest.raises(ValueError, match="reasoning_effort must be one of"):
+            BatchConfig(reasoning_effort="invalid")
+
+        with pytest.raises(ValueError, match="reasoning_effort must be one of"):
+            BatchConfig(reasoning_effort="extreme")
+
+        with pytest.raises(ValueError, match="reasoning_effort must be one of"):
+            BatchConfig(reasoning_effort="")
 
 
 class TestBatchItem:

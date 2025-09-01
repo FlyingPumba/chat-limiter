@@ -185,6 +185,15 @@ class TestOpenAIAdapter:
         assert adapter.is_reasoning_model("gpt-4o-mini") == False
         assert adapter.is_reasoning_model("gpt-4-turbo") == False
         assert adapter.is_reasoning_model("gpt-3.5-turbo") == False
+        
+        # Test prefixed reasoning models (OpenRouter format)
+        assert adapter.is_reasoning_model("openai/o1-preview") == True
+        assert adapter.is_reasoning_model("openai/o3-mini") == True
+        assert adapter.is_reasoning_model("openai/o4-preview") == True
+        
+        # Test prefixed non-reasoning models
+        assert adapter.is_reasoning_model("openai/gpt-4o") == False
+        assert adapter.is_reasoning_model("anthropic/claude-3-sonnet") == False
 
     def test_format_request_reasoning_model(self):
         """Test request formatting for reasoning models uses max_completion_tokens."""
@@ -222,6 +231,60 @@ class TestOpenAIAdapter:
         """Test OpenAI endpoint."""
         adapter = OpenAIAdapter()
         assert adapter.get_endpoint() == "/chat/completions"
+
+    def test_reasoning_effort_for_reasoning_model(self):
+        """Test that reasoning_effort is added for reasoning models."""
+        adapter = OpenAIAdapter()
+        request = ChatCompletionRequest(
+            model="o3-mini",
+            messages=[Message(role=MessageRole.USER, content="Hello!")],
+            reasoning_effort="medium"
+        )
+
+        formatted = adapter.format_request(request)
+
+        assert formatted["reasoning"] == {"effort": "medium"}
+
+    def test_reasoning_effort_for_non_reasoning_model(self):
+        """Test that reasoning_effort is NOT added for non-reasoning models."""
+        adapter = OpenAIAdapter()
+        request = ChatCompletionRequest(
+            model="gpt-4o",
+            messages=[Message(role=MessageRole.USER, content="Hello!")],
+            reasoning_effort="medium"
+        )
+
+        formatted = adapter.format_request(request)
+
+        assert "reasoning" not in formatted
+
+    def test_reasoning_effort_none_value(self):
+        """Test that reasoning_effort=None doesn't add reasoning parameter."""
+        adapter = OpenAIAdapter()
+        request = ChatCompletionRequest(
+            model="o3-mini",
+            messages=[Message(role=MessageRole.USER, content="Hello!")],
+            reasoning_effort=None
+        )
+
+        formatted = adapter.format_request(request)
+
+        assert "reasoning" not in formatted
+
+    def test_reasoning_effort_all_valid_values(self):
+        """Test all valid reasoning_effort values."""
+        adapter = OpenAIAdapter()
+        
+        for effort in ["low", "medium", "high"]:
+            request = ChatCompletionRequest(
+                model="o3-mini",
+                messages=[Message(role=MessageRole.USER, content="Hello!")],
+                reasoning_effort=effort
+            )
+
+            formatted = adapter.format_request(request)
+
+            assert formatted["reasoning"] == {"effort": effort}
 
 
 class TestAnthropicAdapter:
@@ -398,6 +461,20 @@ class TestAnthropicAdapter:
         adapter = AnthropicAdapter()
         assert adapter.get_endpoint() == "/messages"
 
+    def test_reasoning_effort_not_supported(self):
+        """Test that Anthropic adapter doesn't add reasoning parameter (not supported)."""
+        adapter = AnthropicAdapter()
+        request = ChatCompletionRequest(
+            model="claude-3-sonnet-20240229",
+            messages=[Message(role=MessageRole.USER, content="Hello!")],
+            reasoning_effort="medium"
+        )
+
+        formatted = adapter.format_request(request)
+
+        # Anthropic doesn't support reasoning effort
+        assert "reasoning" not in formatted
+
 
 class TestOpenRouterAdapter:
     def test_format_request_basic(self):
@@ -491,6 +568,32 @@ class TestOpenRouterAdapter:
         """Test OpenRouter endpoint."""
         adapter = OpenRouterAdapter()
         assert adapter.get_endpoint() == "/chat/completions"
+
+    def test_reasoning_effort_for_reasoning_model(self):
+        """Test that reasoning_effort is added for reasoning models in OpenRouter."""
+        adapter = OpenRouterAdapter()
+        request = ChatCompletionRequest(
+            model="openai/o3-mini",
+            messages=[Message(role=MessageRole.USER, content="Hello!")],
+            reasoning_effort="high"
+        )
+
+        formatted = adapter.format_request(request)
+
+        assert formatted["reasoning"] == {"effort": "high"}
+
+    def test_reasoning_effort_for_non_reasoning_model(self):
+        """Test that reasoning_effort is NOT added for non-reasoning models in OpenRouter."""
+        adapter = OpenRouterAdapter()
+        request = ChatCompletionRequest(
+            model="openai/gpt-4o",
+            messages=[Message(role=MessageRole.USER, content="Hello!")],
+            reasoning_effort="medium"
+        )
+
+        formatted = adapter.format_request(request)
+
+        assert "reasoning" not in formatted
 
 
 class TestGetAdapter:

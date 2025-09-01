@@ -63,6 +63,9 @@ class BatchConfig:
     # Response format configuration
     json_mode: bool = False
 
+    # Reasoning configuration (for thinking models like o1, o3, o4)
+    reasoning_effort: str | None = None  # None, "low", "medium", or "high"
+
     # Batch size optimization
     adaptive_batch_size: bool = True
     min_batch_size: int = 1
@@ -71,6 +74,16 @@ class BatchConfig:
     # Request grouping
     group_by_model: bool = True
     group_by_provider: bool = True
+
+    def __post_init__(self):
+        """Validate configuration after initialization."""
+        if self.reasoning_effort is not None:
+            valid_efforts = {"low", "medium", "high"}
+            if self.reasoning_effort not in valid_efforts:
+                raise ValueError(
+                    f"reasoning_effort must be one of {valid_efforts} or None, "
+                    f"got: {self.reasoning_effort}"
+                )
 
 
 @dataclass
@@ -576,6 +589,7 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
             "frequency_penalty": request.frequency_penalty,
             "presence_penalty": request.presence_penalty,
             "top_k": request.top_k,
+            "reasoning_effort": self.config.reasoning_effort,
         }
 
         # Add json_mode if enabled
@@ -629,6 +643,7 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
             "frequency_penalty": request.frequency_penalty,
             "presence_penalty": request.presence_penalty,
             "top_k": request.top_k,
+            "reasoning_effort": self.config.reasoning_effort,
         }
 
         # Add json_mode if enabled

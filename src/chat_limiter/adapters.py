@@ -21,6 +21,17 @@ from .types import (
 class ProviderAdapter(ABC):
     """Abstract base class for provider-specific adapters."""
 
+    def is_reasoning_model(self, model_name: str) -> bool:
+        """Check if the model is a reasoning model (o1, o3, o4 series)."""
+        # Handle prefixed models (e.g., "openai/o3-mini")
+        if "/" in model_name:
+            # Extract the base model name after the "/"
+            base_model = model_name.split("/", 1)[1]
+            return base_model.startswith(("o1", "o3", "o4"))
+
+        # Handle non-prefixed models
+        return model_name.startswith(("o1", "o3", "o4"))
+
     @abstractmethod
     def format_request(self, request: ChatCompletionRequest) -> dict[str, Any]:
         """Convert our request format to provider-specific format."""
@@ -43,10 +54,6 @@ class ProviderAdapter(ABC):
 
 class OpenAIAdapter(ProviderAdapter):
     """Adapter for OpenAI API."""
-
-    def is_reasoning_model(self, model_name: str) -> bool:
-        """Check if the model is a reasoning model that requires max_completion_tokens."""
-        return model_name.startswith(("o1", "o3", "o4"))
 
     def format_request(self, request: ChatCompletionRequest) -> dict[str, Any]:
         """Convert to OpenAI format."""
@@ -105,6 +112,11 @@ class OpenAIAdapter(ProviderAdapter):
             openai_request["frequency_penalty"] = request.frequency_penalty
         if request.presence_penalty is not None:
             openai_request["presence_penalty"] = request.presence_penalty
+
+        # Add reasoning parameter for thinking models
+        if (request.reasoning_effort is not None and
+            self.is_reasoning_model(request.model)):
+            openai_request["reasoning"] = {"effort": request.reasoning_effort}
 
         return openai_request
 
@@ -306,6 +318,11 @@ class OpenRouterAdapter(ProviderAdapter):
             openrouter_request["presence_penalty"] = request.presence_penalty
         if request.top_k is not None:
             openrouter_request["top_k"] = request.top_k
+
+        # Add reasoning parameter for thinking models
+        if (request.reasoning_effort is not None and
+            self.is_reasoning_model(request.model)):
+            openrouter_request["reasoning"] = {"effort": request.reasoning_effort}
 
         return openrouter_request
 
