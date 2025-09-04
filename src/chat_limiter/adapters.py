@@ -112,6 +112,8 @@ class OpenAIAdapter(ProviderAdapter):
             openai_request["frequency_penalty"] = request.frequency_penalty
         if request.presence_penalty is not None:
             openai_request["presence_penalty"] = request.presence_penalty
+        if request.seed is not None:
+            openai_request["seed"] = request.seed
 
         # Add reasoning parameter for thinking models
         if (request.reasoning_effort is not None and
@@ -218,6 +220,8 @@ class AnthropicAdapter(ProviderAdapter):
             anthropic_request["stream"] = request.stream
         if request.top_k is not None:
             anthropic_request["top_k"] = request.top_k
+        if request.seed is not None:
+            anthropic_request["seed"] = request.seed
 
         return anthropic_request
 
@@ -318,6 +322,8 @@ class OpenRouterAdapter(ProviderAdapter):
             openrouter_request["presence_penalty"] = request.presence_penalty
         if request.top_k is not None:
             openrouter_request["top_k"] = request.top_k
+        if request.seed is not None:
+            openrouter_request["seed"] = request.seed
 
         # Add reasoning parameter for thinking models
         if (request.reasoning_effort is not None and

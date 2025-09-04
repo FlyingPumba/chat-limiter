@@ -35,6 +35,7 @@ class ChatCompletionRequest(BaseModel):
     top_p: float | None = None
     stop: str | list[str] | None = None
     stream: bool = False
+    seed: int | None = None
 
     # Provider-specific parameters (will be filtered per provider)
     frequency_penalty: float | None = None  # OpenAI
