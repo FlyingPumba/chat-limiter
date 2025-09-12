@@ -330,6 +330,13 @@ class OpenRouterAdapter(ProviderAdapter):
             self.is_reasoning_model(request.model)):
             openrouter_request["reasoning"] = {"effort": request.reasoning_effort}
 
+        # Add provider routing if specified
+        if request.providers is not None:
+            openrouter_request["provider"] = {
+                "order": request.providers,
+                "allow_fallbacks": False
+            }
+
         return openrouter_request
 
     def parse_response(

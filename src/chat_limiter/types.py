@@ -42,6 +42,7 @@ class ChatCompletionRequest(BaseModel):
     presence_penalty: float | None = None   # OpenAI
     top_k: int | None = None               # Anthropic
     reasoning_effort: str | None = None    # OpenAI/OpenRouter reasoning models
+    providers: list[str] | None = None     # OpenRouter provider routing
 
 
 @dataclass
