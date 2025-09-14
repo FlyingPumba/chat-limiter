@@ -20,6 +20,26 @@ _model_cache: dict[str, dict[str, Any]] = {}
 _cache_duration = timedelta(hours=1)  # Cache models for 1 hour
 
 
+def _run_coro_in_new_thread(coro: Any, timeout: float | None = 30):
+    """Run an async coroutine to completion in a fresh event loop on a new thread."""
+    import concurrent.futures
+
+    def runner():
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(coro)
+        finally:
+            try:
+                loop.close()
+            finally:
+                asyncio.set_event_loop(None)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(runner)
+        return future.result(timeout=timeout)
+
+
 @dataclass
 class ModelDiscoveryResult:
     """Result of model discovery process."""
@@ -193,17 +213,17 @@ class ModelDiscovery:
     @staticmethod
     def get_openai_models_sync(api_key: str) -> set[str]:
         """Synchronous version of get_openai_models."""
-        return asyncio.run(ModelDiscovery.get_openai_models(api_key))
+        return _run_coro_in_new_thread(ModelDiscovery.get_openai_models(api_key))
 
     @staticmethod
     def get_anthropic_models_sync(api_key: str) -> set[str]:
         """Synchronous version of get_anthropic_models."""
-        return asyncio.run(ModelDiscovery.get_anthropic_models(api_key))
+        return _run_coro_in_new_thread(ModelDiscovery.get_anthropic_models(api_key))
 
     @staticmethod
     def get_openrouter_models_sync(api_key: str | None = None) -> set[str]:
         """Synchronous version of get_openrouter_models."""
-        return asyncio.run(ModelDiscovery.get_openrouter_models(api_key))
+        return _run_coro_in_new_thread(ModelDiscovery.get_openrouter_models(api_key))
 
 
 async def detect_provider_from_model_async(
@@ -320,23 +340,7 @@ def detect_provider_from_model_sync(
     api_keys: dict[str, str] | None = None
 ) -> ModelDiscoveryResult:
     """Synchronous version of detect_provider_from_model_async."""
-    # Check if we're already in an async context
-    try:
-        asyncio.get_running_loop()
-        # We're in an async context, but need to run in sync mode
-        # Create a new event loop in a thread
-        import concurrent.futures
-
-        def run_in_thread() -> ModelDiscoveryResult:
-            return asyncio.run(detect_provider_from_model_async(model, api_keys))
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_in_thread)
-            return future.result(timeout=30)  # 30 second timeout
-
-    except RuntimeError:
-        # No running loop, safe to use asyncio.run
-        return asyncio.run(detect_provider_from_model_async(model, api_keys))
+    return _run_coro_in_new_thread(detect_provider_from_model_async(model, api_keys))
 
 
 def clear_model_cache() -> None:
