@@ -265,12 +265,30 @@ class ChatLimiter:
             # Try dynamic discovery first to get more detailed information
             discovery_result = None
             if use_dynamic_discovery and api_keys_for_discovery:
-                from .models import detect_provider_from_model_sync
+                # Use async discovery in a fresh thread if we're inside an event loop
+                try:
+                    asyncio.get_running_loop()
+                    in_async_context = True
+                except RuntimeError:
+                    in_async_context = False
 
-                discovery_result = detect_provider_from_model_sync(
-                    model, api_keys_for_discovery
-                )
-                detected_provider = discovery_result.found_provider
+                if in_async_context:
+                    from .models import (
+                        _run_coro_in_new_thread,
+                        detect_provider_from_model_async,
+                    )
+
+                    discovery_result = _run_coro_in_new_thread(
+                        detect_provider_from_model_async(model, api_keys_for_discovery)
+                    )
+                    detected_provider = discovery_result.found_provider
+                else:
+                    from .models import detect_provider_from_model_sync
+
+                    discovery_result = detect_provider_from_model_sync(
+                        model, api_keys_for_discovery
+                    )
+                    detected_provider = discovery_result.found_provider
             else:
                 detected_provider = detect_provider_from_model(
                     model, use_dynamic_discovery, api_keys_for_discovery
