@@ -6,9 +6,16 @@ Fail-fast, minimal helpers to bridge async code into sync callers.
 
 import asyncio
 import concurrent.futures
+from functools import lru_cache
 from typing import Any, TypeVar
 
 T = TypeVar("T")
+
+
+@lru_cache(maxsize=1)
+def _get_background_executor() -> concurrent.futures.ThreadPoolExecutor:
+    """Return a singleton background executor for bridging from running loops."""
+    return concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
 
 def run_coro_blocking(coro: Any) -> T:
@@ -31,22 +38,30 @@ def run_coro_blocking(coro: Any) -> T:
             # and did not consume it, to avoid "coroutine was never awaited" warnings.
             try:
                 coro.close()  # type: ignore[attr-defined]
-            except Exception:
+            except AttributeError:
                 pass
 
     def _runner() -> T:
         return asyncio.run(coro)  # type: ignore[no-any-return]
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+    try:
+        executor = _get_background_executor()
+    except Exception:
+        # Ensure the coroutine is closed to avoid 'was never awaited' warnings
         try:
-            future: concurrent.futures.Future[T] = executor.submit(_runner)
-            return future.result()
-        finally:
-            # Close the coroutine in case the background runner did not
-            # actually execute it (e.g., asyncio.run mocked in tests).
-            try:
-                coro.close()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+            coro.close()  # type: ignore[attr-defined]
+        except AttributeError:
+            pass
+        raise
+    try:
+        future: concurrent.futures.Future[T] = executor.submit(_runner)
+        return future.result()
+    finally:
+        # Close the coroutine in case the background runner did not
+        # actually execute it (e.g., asyncio.run mocked in tests).
+        try:
+            coro.close()  # type: ignore[attr-defined]
+        except AttributeError:
+            pass
 
 

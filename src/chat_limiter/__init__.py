@@ -27,6 +27,9 @@ from .types import (
     Usage,
 )
 
+# Expose submodules for type checkers (e.g., mypy) and explicit imports in tests
+from . import utils as utils  # noqa: F401
+
 __all__ = [
     "ChatLimiter",
     "LimiterState",
