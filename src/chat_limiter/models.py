@@ -20,17 +20,7 @@ _model_cache: dict[str, dict[str, Any]] = {}
 _cache_duration = timedelta(hours=1)  # Cache models for 1 hour
 
 
-def _run_coro_in_new_thread(coro: Any, timeout: float | None = 30):
-    """Run a coroutine to completion by invoking asyncio.run in a new thread."""
-    import concurrent.futures
-
-    def runner():
-        # Intentionally use asyncio.run so tests can mock it
-        return asyncio.run(coro)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(runner)
-        return future.result(timeout=timeout)
+from .utils import run_coro_blocking
 
 
 @dataclass
@@ -206,17 +196,17 @@ class ModelDiscovery:
     @staticmethod
     def get_openai_models_sync(api_key: str) -> set[str]:
         """Synchronous version of get_openai_models."""
-        return asyncio.run(ModelDiscovery.get_openai_models(api_key))
+        return run_coro_blocking(ModelDiscovery.get_openai_models(api_key))
 
     @staticmethod
     def get_anthropic_models_sync(api_key: str) -> set[str]:
         """Synchronous version of get_anthropic_models."""
-        return asyncio.run(ModelDiscovery.get_anthropic_models(api_key))
+        return run_coro_blocking(ModelDiscovery.get_anthropic_models(api_key))
 
     @staticmethod
     def get_openrouter_models_sync(api_key: str | None = None) -> set[str]:
         """Synchronous version of get_openrouter_models."""
-        return asyncio.run(ModelDiscovery.get_openrouter_models(api_key))
+        return run_coro_blocking(ModelDiscovery.get_openrouter_models(api_key))
 
 
 async def detect_provider_from_model_async(
@@ -333,13 +323,7 @@ def detect_provider_from_model_sync(
     api_keys: dict[str, str] | None = None
 ) -> ModelDiscoveryResult:
     """Synchronous version of detect_provider_from_model_async."""
-    try:
-        asyncio.get_running_loop()
-        # If we're already in an event loop, run in a fresh thread/loop
-        return _run_coro_in_new_thread(detect_provider_from_model_async(model, api_keys))
-    except RuntimeError:
-        # No running loop, safe to call directly
-        return asyncio.run(detect_provider_from_model_async(model, api_keys))
+    return run_coro_blocking(detect_provider_from_model_async(model, api_keys))
 
 
 def clear_model_cache() -> None:

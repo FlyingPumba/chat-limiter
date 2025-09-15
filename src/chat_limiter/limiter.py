@@ -3,11 +3,11 @@ Core rate limiter implementation using PyrateLimiter.
 """
 
 import asyncio
-import logging
-import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
+import logging
+import time
 from typing import Any
 
 import httpx
@@ -34,6 +34,7 @@ from .types import (
     MessageRole,
     detect_provider_from_model,
 )
+from .models import detect_provider_from_model_sync
 
 logger = logging.getLogger(__name__)
 
@@ -264,35 +265,9 @@ class ChatLimiter:
 
             # Try dynamic discovery first to get more detailed information
             discovery_result = None
-            if use_dynamic_discovery and api_keys_for_discovery:
-                # Use async discovery in a fresh thread if we're inside an event loop
-                try:
-                    asyncio.get_running_loop()
-                    in_async_context = True
-                except RuntimeError:
-                    in_async_context = False
-
-                if in_async_context:
-                    from .models import (
-                        _run_coro_in_new_thread,
-                        detect_provider_from_model_async,
-                    )
-
-                    discovery_result = _run_coro_in_new_thread(
-                        detect_provider_from_model_async(model, api_keys_for_discovery)
-                    )
-                    detected_provider = discovery_result.found_provider
-                else:
-                    from .models import detect_provider_from_model_sync
-
-                    discovery_result = detect_provider_from_model_sync(
-                        model, api_keys_for_discovery
-                    )
-                    detected_provider = discovery_result.found_provider
-            else:
-                detected_provider = detect_provider_from_model(
-                    model, use_dynamic_discovery, api_keys_for_discovery
-                )
+            detected_provider = detect_provider_from_model(
+                model, use_dynamic_discovery, api_keys_for_discovery
+            )
 
             if not detected_provider:
                 discovery_msg = (

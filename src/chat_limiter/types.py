@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from .models import detect_provider_from_model_sync
+
 from pydantic import BaseModel
 
 
@@ -168,7 +170,6 @@ def detect_provider_from_model(model: str, use_dynamic_discovery: bool = False, 
 
     # If dynamic discovery is enabled and we have API keys, try that
     if use_dynamic_discovery and api_keys:
-        from .models import detect_provider_from_model_sync
         result = detect_provider_from_model_sync(model, api_keys)
         return result.found_provider
 
