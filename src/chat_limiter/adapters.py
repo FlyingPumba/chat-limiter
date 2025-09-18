@@ -65,22 +65,27 @@ class OpenAIAdapter(ProviderAdapter):
                 "content": msg.content
             })
 
+        model = request.model.strip()
+        if model.startswith("openai/"):
+            # Remove the "openai/" prefix, since we are already using the OpenAI API
+            model = model.split("openai/", 1)[1]
+
         # Build request
         openai_request: dict[str, Any] = {
-            "model": request.model,
+            "model": model,
             "messages": messages,
         }
 
         # Add optional parameters
         if request.max_tokens is not None:
             # Use max_completion_tokens for reasoning models (o1, o3, o4)
-            if self.is_reasoning_model(request.model):
+            if self.is_reasoning_model(model):
                 openai_request["max_completion_tokens"] = request.max_tokens
             else:
                 openai_request["max_tokens"] = request.max_tokens
 
         # Handle temperature for reasoning models
-        if self.is_reasoning_model(request.model):
+        if self.is_reasoning_model(model):
             # For reasoning models, default to temperature=1
             default_temperature = 1.0
 
@@ -88,11 +93,11 @@ class OpenAIAdapter(ProviderAdapter):
                 # If user provided a different temperature, warn them and use temperature=1
                 if request.temperature != default_temperature:
                     warnings.warn(
-                        f"WARNING: Model '{request.model}' is a reasoning model that requires temperature=1. "
+                        f"WARNING: Model '{model}' is a reasoning model that requires temperature=1. "
                         f"Your specified temperature={request.temperature} will be overridden to temperature=1.",
                         UserWarning
                     )
-                    print(f"WARNING: Model '{request.model}' is a reasoning model that requires temperature=1. "
+                    print(f"WARNING: Model '{model}' is a reasoning model that requires temperature=1. "
                           f"Your specified temperature={request.temperature} will be overridden to temperature=1.")
 
             # Always use temperature=1 for reasoning models
@@ -117,7 +122,7 @@ class OpenAIAdapter(ProviderAdapter):
 
         # Add reasoning parameter for thinking models
         if (request.reasoning_effort is not None and
-            self.is_reasoning_model(request.model)):
+            self.is_reasoning_model(model)):
             openai_request["reasoning"] = {"effort": request.reasoning_effort}
 
         return openai_request
@@ -196,9 +201,14 @@ class AnthropicAdapter(ProviderAdapter):
                     "content": msg.content
                 })
 
+        model = request.model.strip()
+        if model.startswith("anthropic/"):
+            # Remove the "anthropic/" prefix, since we are already using the Anthropic API
+            model = model.split("anthropic/", 1)[1]
+
         # Build request
         anthropic_request: dict[str, Any] = {
-            "model": request.model,
+            "model": model,
             "messages": messages,
             "max_tokens": request.max_tokens or 1024,  # Required for Anthropic
         }
@@ -299,9 +309,11 @@ class OpenRouterAdapter(ProviderAdapter):
                 "content": msg.content
             })
 
+        model = request.model.strip()
+
         # Build request
         openrouter_request: dict[str, Any] = {
-            "model": request.model,
+            "model": model,
             "messages": messages,
         }
 
@@ -327,7 +339,7 @@ class OpenRouterAdapter(ProviderAdapter):
 
         # Add reasoning parameter for thinking models
         if (request.reasoning_effort is not None and
-            self.is_reasoning_model(request.model)):
+            self.is_reasoning_model(model)):
             openrouter_request["reasoning"] = {"effort": request.reasoning_effort}
 
         # Add provider routing if specified
