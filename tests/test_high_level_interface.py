@@ -272,12 +272,36 @@ class TestChatCompletionSync:
         assert response.choices[0].message.content == "Hello!"
 
     def test_chat_completion_sync_without_context(self):
-        """Test sync chat completion without context manager raises error."""
+        """Test sync chat completion without context manager works with per-call client."""
         limiter = ChatLimiter(provider=Provider.OPENAI, api_key="sk-test")
         messages = [Message(role=MessageRole.USER, content="Hello!")]
 
-        with pytest.raises(RuntimeError, match="must be used as a sync context manager"):
-            limiter.chat_completion_sync(model="gpt-4o", messages=messages)
+        with patch("chat_limiter.limiter.httpx.Client") as MockClient:
+            mock_client = Mock()
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.headers = {}
+            mock_response.json.return_value = {
+                "id": "chatcmpl-test",
+                "model": "gpt-4o",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "Hello!"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
+            }
+            mock_client.request.return_value = mock_response
+            MockClient.return_value = mock_client
+
+            response = limiter.chat_completion_sync(model="gpt-4o", messages=messages)
+
+            assert response.success
+            assert response.choices[0].message.content == "Hello!"
+            mock_client.request.assert_called()
+            mock_client.close.assert_called()
 
     def test_simple_chat_sync(self, mock_limiter):
         """Test simple chat sync convenience method."""
