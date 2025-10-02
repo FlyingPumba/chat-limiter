@@ -17,7 +17,7 @@ from chat_limiter.batch import (
 )
 
 
-@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set")
+@pytest.mark.skipif(not bool(os.getenv("OPENAI_API_KEY")), reason="OPENAI_API_KEY not set")
 class TestOpenAIGPT4oLive:
     """Live tests for sending a small request to openai/gpt-4o via batch API."""
 

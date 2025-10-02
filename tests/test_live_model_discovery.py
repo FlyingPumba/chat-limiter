@@ -9,7 +9,7 @@ from chat_limiter.models import ModelDiscovery
 from chat_limiter.types import Message, MessageRole
 
 
-@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set")
+@pytest.mark.skipif(not bool(os.getenv("OPENAI_API_KEY")), reason="OPENAI_API_KEY not set")
 class TestLiveModelDiscovery:
     """Test dynamic model discovery with real API calls."""
 

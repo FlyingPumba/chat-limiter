@@ -11,10 +11,10 @@ import pytest
 
 from chat_limiter import ChatLimiter, Message, MessageRole
 
-# Skip conditions for each provider
-OPENAI_AVAILABLE = os.getenv("OPENAI_API_KEY") is not None
-ANTHROPIC_AVAILABLE = os.getenv("ANTHROPIC_API_KEY") is not None
-OPENROUTER_AVAILABLE = os.getenv("OPENROUTER_API_KEY") is not None
+# Skip conditions for each provider (treat empty strings as unavailable)
+OPENAI_AVAILABLE = bool(os.getenv("OPENAI_API_KEY"))
+ANTHROPIC_AVAILABLE = bool(os.getenv("ANTHROPIC_API_KEY"))
+OPENROUTER_AVAILABLE = bool(os.getenv("OPENROUTER_API_KEY"))
 
 
 class TestOpenAIIntegration:
@@ -24,7 +24,7 @@ class TestOpenAIIntegration:
     @pytest.mark.asyncio
     async def test_basic_chat_completion(self):
         """Test basic chat completion with OpenAI."""
-        async with ChatLimiter.for_model("gpt-4o-mini") as limiter:
+        async with ChatLimiter.for_model("gpt-4o-mini", timeout=10.0, max_retries=0) as limiter:
             response = await limiter.chat_completion(
                 model="gpt-4o-mini",
                 messages=[Message(role=MessageRole.USER, content="Hi")],
@@ -41,7 +41,7 @@ class TestOpenAIIntegration:
     @pytest.mark.asyncio
     async def test_rate_limit_header_parsing(self):
         """Test that OpenAI rate limit headers are parsed correctly."""
-        async with ChatLimiter.for_model("gpt-4o-mini") as limiter:
+        async with ChatLimiter.for_model("gpt-4o-mini", timeout=10.0, max_retries=0) as limiter:
             # Make a request to get headers
             await limiter.chat_completion(
                 model="gpt-4o-mini",
@@ -68,7 +68,7 @@ class TestOpenAIIntegration:
     @pytest.mark.asyncio
     async def test_very_short_prompt(self):
         """Test with minimal prompt to verify token estimation."""
-        async with ChatLimiter.for_model("gpt-4o-mini") as limiter:
+        async with ChatLimiter.for_model("gpt-4o-mini", timeout=10.0, max_retries=0) as limiter:
             response = await limiter.simple_chat(
                 model="gpt-4o-mini",
                 prompt="Hi",
@@ -81,7 +81,7 @@ class TestOpenAIIntegration:
     @pytest.mark.skipif(not OPENAI_AVAILABLE, reason="OPENAI_API_KEY not set")
     def test_sync_chat_completion(self):
         """Test synchronous chat completion."""
-        with ChatLimiter.for_model("gpt-4o-mini") as limiter:
+        with ChatLimiter.for_model("gpt-4o-mini", timeout=10.0, max_retries=0) as limiter:
             response = limiter.chat_completion_sync(
                 model="gpt-4o-mini",
                 messages=[Message(role=MessageRole.USER, content="Hello")],
@@ -100,7 +100,7 @@ class TestAnthropicIntegration:
     @pytest.mark.asyncio
     async def test_basic_chat_completion(self):
         """Test basic chat completion with Anthropic."""
-        async with ChatLimiter.for_model("claude-3-haiku-20240307") as limiter:
+        async with ChatLimiter.for_model("claude-3-haiku-20240307", timeout=10.0, max_retries=0) as limiter:
             response = await limiter.chat_completion(
                 model="claude-3-haiku-20240307",
                 messages=[Message(role=MessageRole.USER, content="Hi")],
@@ -122,7 +122,7 @@ class TestAnthropicIntegration:
             Message(role=MessageRole.USER, content="What is Python?")
         ]
 
-        async with ChatLimiter.for_model("claude-3-haiku-20240307") as limiter:
+        async with ChatLimiter.for_model("claude-3-haiku-20240307", timeout=10.0, max_retries=0) as limiter:
             response = await limiter.chat_completion(
                 model="claude-3-haiku-20240307",
                 messages=messages,
@@ -176,7 +176,7 @@ class TestOpenRouterIntegration:
         success = False
         for model in models_to_try:
             try:
-                async with ChatLimiter.for_model(model) as limiter:
+                async with ChatLimiter.for_model(model, timeout=10.0, max_retries=0) as limiter:
                     response = await limiter.chat_completion(
                         model=model,
                         messages=[Message(role=MessageRole.USER, content="Hi")],
@@ -193,14 +193,14 @@ class TestOpenRouterIntegration:
 
         # If none of the free models work, just verify the provider detection works
         if not success:
-            async with ChatLimiter.for_model("openai/gpt-4o-mini") as limiter:
+            async with ChatLimiter.for_model("openai/gpt-4o-mini", timeout=10.0, max_retries=0) as limiter:
                 assert limiter.provider.value == "openai"
 
     @pytest.mark.skipif(not OPENAI_AVAILABLE, reason="OPENAI_API_KEY not set")
     @pytest.mark.asyncio
     async def test_openai_model_with_prefix(self):
         """Test using OpenAI model with prefix - should route to OpenAI provider with the fix."""
-        async with ChatLimiter.for_model("openai/gpt-4o-mini") as limiter:
+        async with ChatLimiter.for_model("openai/gpt-4o-mini", timeout=10.0, max_retries=0) as limiter:
             # Just test that the provider is correctly detected, not the full API call
             # since the current implementation doesn't handle model name transformation
             assert limiter.provider.value == "openai"
@@ -209,7 +209,7 @@ class TestOpenRouterIntegration:
     @pytest.mark.asyncio
     async def test_pure_openrouter_model(self):
         """Test using a model that only exists in OpenRouter."""
-        async with ChatLimiter.for_model("meta-llama/llama-3.1-405b-instruct") as limiter:
+        async with ChatLimiter.for_model("meta-llama/llama-3.1-405b-instruct", timeout=10.0, max_retries=0) as limiter:
             # Just test that the provider is correctly detected
             # Live API call would require credits which we might not have
             assert limiter.provider.value == "openrouter"
@@ -222,7 +222,7 @@ class TestProviderAutoDetection:
     @pytest.mark.asyncio
     async def test_openai_model_detection(self):
         """Test that OpenAI models are detected correctly."""
-        async with ChatLimiter.for_model("gpt-4o-mini") as limiter:
+        async with ChatLimiter.for_model("gpt-4o-mini", timeout=10.0, max_retries=0) as limiter:
             assert limiter.provider.value == "openai"
 
             response = await limiter.simple_chat(
@@ -237,7 +237,7 @@ class TestProviderAutoDetection:
     @pytest.mark.asyncio
     async def test_anthropic_model_detection(self):
         """Test that Anthropic models are detected correctly."""
-        async with ChatLimiter.for_model("claude-3-haiku-20240307") as limiter:
+        async with ChatLimiter.for_model("claude-3-haiku-20240307", timeout=10.0, max_retries=0) as limiter:
             assert limiter.provider.value == "anthropic"
 
             response = await limiter.simple_chat(
@@ -252,7 +252,7 @@ class TestProviderAutoDetection:
     @pytest.mark.asyncio
     async def test_openai_prefixed_model_detection(self):
         """Test that openai/ prefixed models are detected correctly with the fix."""
-        async with ChatLimiter.for_model("openai/gpt-4o-mini") as limiter:
+        async with ChatLimiter.for_model("openai/gpt-4o-mini", timeout=10.0, max_retries=0) as limiter:
             assert limiter.provider.value == "openai"
 
 
@@ -286,7 +286,7 @@ class TestRateLimitBehavior:
     @pytest.mark.asyncio
     async def test_multiple_requests_tracking(self):
         """Test that multiple requests are tracked correctly."""
-        async with ChatLimiter.for_model("gpt-4o-mini") as limiter:
+        async with ChatLimiter.for_model("gpt-4o-mini", timeout=10.0, max_retries=0) as limiter:
             # Make multiple small requests
             for i in range(3):
                 await limiter.simple_chat(
@@ -307,7 +307,7 @@ class TestRateLimitBehavior:
     @pytest.mark.asyncio
     async def test_usage_reset(self):
         """Test usage tracking reset functionality."""
-        async with ChatLimiter.for_model("gpt-4o-mini") as limiter:
+        async with ChatLimiter.for_model("gpt-4o-mini", timeout=10.0, max_retries=0) as limiter:
             # Make a request
             await limiter.simple_chat(
                 model="gpt-4o-mini",
@@ -338,7 +338,7 @@ class TestErrorHandling:
         import httpx
         from tenacity import RetryError
 
-        async with ChatLimiter.for_model("gpt-4o-mini") as limiter:
+        async with ChatLimiter.for_model("gpt-4o-mini", timeout=10.0, max_retries=0) as limiter:
             # OpenAI returns a 404 for invalid models, which should be raised
             try:
                 response = await limiter.chat_completion(

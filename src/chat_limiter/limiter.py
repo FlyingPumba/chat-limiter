@@ -783,9 +783,6 @@ class ChatLimiter:
             httpx.HTTPStatusError: For HTTP error responses
             httpx.RequestError: For request errors
         """
-        if not self._async_context_active:
-            raise RuntimeError("ChatLimiter must be used as an async context manager")
-
         # Create request object
         request = ChatCompletionRequest(
             model=model,
@@ -813,45 +810,62 @@ class ChatLimiter:
             # Estimate tokens
             estimated_tokens = self._estimate_tokens(formatted_request)
 
-            # Acquire rate limits
-            async with self._acquire_rate_limits(estimated_tokens):
-                # Make the request
-                response = await self.async_client.request(
-                    "POST", adapter.get_endpoint(), json=formatted_request
+            # Choose HTTP client: reuse within async context, per-call otherwise
+            client = None
+            close_client_after_use = False
+            if self._async_context_active:
+                client = self.async_client
+            else:
+                client = httpx.AsyncClient(
+                    base_url=self.config.base_url,
+                    timeout=httpx.Timeout(self._user_timeout),
+                    headers=dict(self.async_client.headers),
                 )
+                close_client_after_use = True
 
-                # Extract rate limit info
-                from .providers import extract_rate_limit_info
-                rate_limit_info = extract_rate_limit_info(
-                    dict(response.headers), self.config
-                )
+            try:
+                # Acquire rate limits
+                async with self._acquire_rate_limits(estimated_tokens):
+                    # Make the request
+                    response = await client.request(
+                        "POST", adapter.get_endpoint(), json=formatted_request
+                    )
 
-                # Update our rate limits
-                if self.enable_adaptive_limits:
-                    self._update_rate_limits(rate_limit_info)
+                    # Extract rate limit info
+                    from .providers import extract_rate_limit_info
+                    rate_limit_info = extract_rate_limit_info(
+                        dict(response.headers), self.config
+                    )
 
-                # Handle rate limit errors
-                if response.status_code == 429:
-                    self.state.consecutive_rate_limit_errors += 1
-                    if rate_limit_info.retry_after:
-                        import asyncio
-                        await asyncio.sleep(rate_limit_info.retry_after)
+                    # Update our rate limits
+                    if self.enable_adaptive_limits:
+                        self._update_rate_limits(rate_limit_info)
+
+                    # Handle rate limit errors
+                    if response.status_code == 429:
+                        self.state.consecutive_rate_limit_errors += 1
+                        if rate_limit_info.retry_after:
+                            import asyncio
+                            await asyncio.sleep(rate_limit_info.retry_after)
+                        else:
+                            # Exponential backoff
+                            import asyncio
+                            backoff = self.config.base_backoff * (
+                                2**self.state.consecutive_rate_limit_errors
+                            )
+                            await asyncio.sleep(min(backoff, self.config.max_backoff))
+
+                        response.raise_for_status()
                     else:
-                        # Exponential backoff
-                        import asyncio
-                        backoff = self.config.base_backoff * (
-                            2**self.state.consecutive_rate_limit_errors
-                        )
-                        await asyncio.sleep(min(backoff, self.config.max_backoff))
+                        # Reset consecutive errors on success
+                        self.state.consecutive_rate_limit_errors = 0
 
-                    response.raise_for_status()
-                else:
-                    # Reset consecutive errors on success
-                    self.state.consecutive_rate_limit_errors = 0
-
-                # Parse the response
-                response_data = response.json()
-                return adapter.parse_response(response_data, request)
+                    # Parse the response
+                    response_data = response.json()
+                    return adapter.parse_response(response_data, request)
+            finally:
+                if close_client_after_use:
+                    await client.aclose()
 
         except Exception as e:
             # Handle errors and return error response
