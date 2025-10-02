@@ -392,6 +392,9 @@ class ChatLimiter:
             self._effective_token_limit = None
             return
 
+        # Dispose existing limiters to prevent background leaker thread accumulation
+        self._dispose_rate_limiters()
+
         # Calculate effective limits with buffer
         effective_request_limit = int(
             self.state.request_limit * self.config.request_buffer_ratio
@@ -447,6 +450,7 @@ class ChatLimiter:
     ) -> None:
         """Async context manager exit."""
         self._async_context_active = False
+        self._dispose_rate_limiters()
         await self.async_client.aclose()
 
     def __enter__(self) -> "ChatLimiter":
@@ -476,7 +480,24 @@ class ChatLimiter:
     ) -> None:
         """Sync context manager exit."""
         self._sync_context_active = False
+        self._dispose_rate_limiters()
         self.sync_client.close()
+
+    def _dispose_rate_limiters(self) -> None:
+        """Dispose buckets from existing pyrate limiters to stop leaker threads."""
+        rl = getattr(self, "request_limiter", None)
+        if rl is not None:
+            for bucket in rl.buckets():
+                rl.dispose(bucket)
+            self.request_limiter = None
+            self._effective_request_limit = None
+
+        tl = getattr(self, "token_limiter", None)
+        if tl is not None:
+            for bucket in tl.buckets():
+                tl.dispose(bucket)
+            self.token_limiter = None
+            self._effective_token_limit = None
 
     async def _discover_rate_limits(self) -> None:
         """Discover current rate limits from the API."""
