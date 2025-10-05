@@ -255,6 +255,13 @@ class TestProviderAutoDetection:
         async with ChatLimiter.for_model("openai/gpt-4o-mini", timeout=10.0, max_retries=0) as limiter:
             assert limiter.provider.value == "openai"
 
+    @pytest.mark.skipif(not OPENAI_AVAILABLE, reason="OPENAI_API_KEY not set")
+    @pytest.mark.asyncio
+    async def test_openai_gpt5mini_prefixed_model_detection(self):
+        """Test that openai/gpt-5-mini auto-detects to OpenAI when OPENAI_API_KEY is set."""
+        async with ChatLimiter.for_model("openai/gpt-5-mini", timeout=10.0, max_retries=0) as limiter:
+            assert limiter.provider.value == "openai"
+
 
 class TestProviderOverride:
     """Test provider override functionality with real APIs."""

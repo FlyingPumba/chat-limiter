@@ -300,6 +300,79 @@ class ChatLimiter:
             provider_name = detected_provider
             provider_enum = Provider(provider_name)
 
+            # If a provider prefix was used, print discovered models when the base
+            # model is not present in the provider's discovered set (diagnostics).
+            if use_dynamic_discovery and "/" in model and api_keys_for_discovery:
+                parts = model.split("/", 1)
+                if len(parts) == 2:
+                    provider_prefix, base_model = parts
+                    discovery_result = detect_provider_from_model_sync(model, api_keys_for_discovery)
+
+                    if provider_name == "openai":
+                        if discovery_result.openai_models is None:
+                            # Print discovery errors if available
+                            if discovery_result.errors:
+                                print("OpenAI discovery: no model list available. Errors:")
+                                for k, v in discovery_result.errors.items():
+                                    print(f"  - {k}: {v}")
+                        elif base_model not in discovery_result.openai_models:
+                            print(
+                                f"OpenAI discovery summary: found={len(discovery_result.openai_models)} models, "
+                                f"contains('{base_model}')=False"
+                            )
+                            models = sorted(list(discovery_result.openai_models))
+                            print(f"OpenAI discovery: base model '{base_model}' not found. Listing {len(models)} discovered models:")
+                            for example in models[:20]:
+                                print(f"  - {example}")
+                        else:
+                            print(
+                                f"OpenAI discovery summary: found={len(discovery_result.openai_models)} models, "
+                                f"contains('{base_model}')=True"
+                            )
+
+                    elif provider_name == "anthropic":
+                        if discovery_result.anthropic_models is None:
+                            if discovery_result.errors:
+                                print("Anthropic discovery: no model list available. Errors:")
+                                for k, v in discovery_result.errors.items():
+                                    print(f"  - {k}: {v}")
+                        elif base_model not in discovery_result.anthropic_models:
+                            print(
+                                f"Anthropic discovery summary: found={len(discovery_result.anthropic_models)} models, "
+                                f"contains('{base_model}')=False"
+                            )
+                            models = sorted(list(discovery_result.anthropic_models))
+                            print(f"Anthropic discovery: base model '{base_model}' not found. Listing {len(models)} discovered models:")
+                            for example in models[:20]:
+                                print(f"  - {example}")
+                        else:
+                            print(
+                                f"Anthropic discovery summary: found={len(discovery_result.anthropic_models)} models, "
+                                f"contains('{base_model}')=True"
+                            )
+
+                    elif provider_name == "openrouter":
+                        # For OpenRouter, the model string includes the provider prefix
+                        if discovery_result.openrouter_models is None:
+                            if discovery_result.errors:
+                                print("OpenRouter discovery: no model list available. Errors:")
+                                for k, v in discovery_result.errors.items():
+                                    print(f"  - {k}: {v}")
+                        elif model not in discovery_result.openrouter_models:
+                            print(
+                                f"OpenRouter discovery summary: found={len(discovery_result.openrouter_models)} models, "
+                                f"contains('{model}')=False"
+                            )
+                            models = sorted(list(discovery_result.openrouter_models))
+                            print(f"OpenRouter discovery: model '{model}' not found. Listing {len(models)} discovered models:")
+                            for example in models[:20]:
+                                print(f"  - {example}")
+                        else:
+                            print(
+                                f"OpenRouter discovery summary: found={len(discovery_result.openrouter_models)} models, "
+                                f"contains('{model}')=True"
+                            )
+
         # Determine API key
         if api_key is None:
             # Try to get from environment variables
@@ -881,15 +954,33 @@ class ChatLimiter:
                         # Reset consecutive errors on success
                         self.state.consecutive_rate_limit_errors = 0
 
+                    # Raise for all non-2xx responses (do not silently succeed)
+                    if response.status_code != 429:
+                        response.raise_for_status()
+
                     # Parse the response
                     response_data = response.json()
                     return adapter.parse_response(response_data, request)
             finally:
                 if close_client_after_use:
                     await client.aclose()
-
+        except httpx.HTTPStatusError as e:
+            body_text = ""
+            try:
+                body_text = e.response.text if e.response is not None else ""
+            except Exception:
+                body_text = ""
+            error_response = ChatCompletionResponse(
+                id="error",
+                model=request.model,
+                success=False,
+                error_message=f"{str(e)} | body={body_text}",
+                choices=[],
+                usage=None,
+                created=None,
+            )
+            return error_response
         except Exception as e:
-            # Handle errors and return error response
             error_response = ChatCompletionResponse(
                 id="error",
                 model=request.model,
@@ -1010,15 +1101,33 @@ class ChatLimiter:
                         # Reset consecutive errors on success
                         self.state.consecutive_rate_limit_errors = 0
 
+                    # Raise for all non-2xx responses (do not silently succeed)
+                    if response.status_code != 429:
+                        response.raise_for_status()
+
                     # Parse the response
                     response_data = response.json()
                     return adapter.parse_response(response_data, request)
             finally:
                 if close_client_after_use:
                     client.close()
-
+        except httpx.HTTPStatusError as e:
+            body_text = ""
+            try:
+                body_text = e.response.text if e.response is not None else ""
+            except Exception:
+                body_text = ""
+            error_response = ChatCompletionResponse(
+                id="error",
+                model=request.model,
+                success=False,
+                error_message=f"{str(e)} | body={body_text}",
+                choices=[],
+                usage=None,
+                created=None,
+            )
+            return error_response
         except Exception as e:
-            # Handle errors and return error response
             error_response = ChatCompletionResponse(
                 id="error",
                 model=request.model,

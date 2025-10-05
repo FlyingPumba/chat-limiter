@@ -609,6 +609,14 @@ class ChatCompletionBatchProcessor(BatchProcessor[ChatCompletionRequest, ChatCom
             if response.choices:
                 for i, choice in enumerate(response.choices):
                     print(f"CHOICE {i}: {choice.message.content}")
+            if response.raw_response is not None:
+                try:
+                    import json as _json
+                    print("RAW:")
+                    print(_json.dumps(response.raw_response, indent=2, ensure_ascii=False))
+                except Exception:
+                    print("RAW (unformatted):")
+                    print(str(response.raw_response))
             print("--- END RESPONSE ---\n")
 
         return response

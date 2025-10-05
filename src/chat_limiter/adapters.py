@@ -27,10 +27,10 @@ class ProviderAdapter(ABC):
         if "/" in model_name:
             # Extract the base model name after the "/"
             base_model = model_name.split("/", 1)[1]
-            return base_model.startswith(("o1", "o3", "o4"))
+            return base_model.startswith(("o1", "o3", "o4", "gpt-5"))
 
         # Handle non-prefixed models
-        return model_name.startswith(("o1", "o3", "o4"))
+        return model_name.startswith(("o1", "o3", "o4", "gpt-5"))
 
     @abstractmethod
     def format_request(self, request: ChatCompletionRequest) -> dict[str, Any]:
@@ -145,9 +145,41 @@ class OpenAIAdapter(ProviderAdapter):
         choices = []
         for choice_data in response_data.get("choices", []):
             message_data = choice_data.get("message", {})
+
+            # Handle both string and content-block formats
+            raw_content = message_data.get("content", "")
+            content_text = ""
+            if isinstance(raw_content, str) and raw_content:
+                content_text = raw_content
+            elif isinstance(raw_content, list) and raw_content:
+                # Newer OpenAI responses may return a list of content blocks
+                parts: list[str] = []
+                for block in raw_content:
+                    if not isinstance(block, dict):
+                        continue
+                    # Prefer explicit output fields used by reasoning models
+                    output_text_val = block.get("output_text")
+                    if isinstance(output_text_val, str) and output_text_val:
+                        parts.append(output_text_val)
+                        continue
+                    # Fallbacks
+                    text_val = block.get("text")
+                    if isinstance(text_val, str) and text_val:
+                        parts.append(text_val)
+                        continue
+                    content_val = block.get("content")
+                    if isinstance(content_val, str) and content_val:
+                        parts.append(content_val)
+                content_text = "".join(parts)
+            # Choice-level fallback sometimes present in reasoning responses
+            if not content_text:
+                choice_level_output = choice_data.get("output_text")
+                if isinstance(choice_level_output, str) and choice_level_output:
+                    content_text = choice_level_output
+
             message = Message(
                 role=MessageRole(message_data.get("role", "assistant")),
-                content=message_data.get("content", "")
+                content=content_text
             )
             choice = Choice(
                 index=choice_data.get("index", 0),

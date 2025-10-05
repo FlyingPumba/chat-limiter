@@ -150,13 +150,20 @@ def detect_provider_from_model(model: str, use_dynamic_discovery: bool = False, 
             elif provider_prefix == "anthropic":
                 preferred_provider = "anthropic"
 
-    # If we have a preferred provider, check if the base model exists in hardcoded lists
+    # If we have a preferred provider, prefer it when its API key is present
     if preferred_provider:
+        has_key_for_preferred = False
+        if api_keys:
+            has_key_for_preferred = api_keys.get(preferred_provider) is not None
+
+        if has_key_for_preferred:
+            return preferred_provider
+
+        # Otherwise, use existing hardcoded checks and optional OpenRouter fallback
         if preferred_provider == "openai" and base_model in OPENAI_MODELS:
             return "openai"
         elif preferred_provider == "anthropic" and base_model in ANTHROPIC_MODELS:
             return "anthropic"
-        # If base model not found in preferred provider, fall back to checking if full model is in OpenRouter
         elif model in OPENROUTER_MODELS:
             return "openrouter"
 
