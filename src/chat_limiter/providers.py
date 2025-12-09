@@ -62,9 +62,9 @@ class ProviderConfig(BaseModel):
     supports_dynamic_limits: bool = True
     auth_endpoint: str | None = None  # For checking limits via API
 
-    # Retry configuration (no defaults - must be specified by user if needed)
+    # Retry configuration
     max_retries: int | None = None
-    base_backoff: float | None = None
+    base_backoff: float = Field(default=1.0, ge=0.0)
     max_backoff: float = Field(default=60.0, ge=1.0)
 
     # Safety buffers
